@@ -1,0 +1,24 @@
+
+name: ARTYKO AION 2 News
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-news:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Scarica il repository
+        uses: actions/checkout@v4
+
+      - name: Configura Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Installa le librerie
+        run: pip install requests beautifulsoup4
+
+      - name: Controlla le notizie AION 2
+        run: python aion2_news.py
