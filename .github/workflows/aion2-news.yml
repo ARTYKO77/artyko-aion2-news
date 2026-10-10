@@ -21,4 +21,6 @@ jobs:
         run: pip install requests beautifulsoup4
 
       - name: Controlla le notizie AION 2
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python aion2_news.py
