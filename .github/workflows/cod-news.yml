@@ -1,0 +1,24 @@
+
+name: ARTYKO COD News Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-cod-news:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Scarica repository
+        uses: actions/checkout@v4
+
+      - name: Configura Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Installa librerie
+        run: pip install requests beautifulsoup4
+
+      - name: Test lettura notizie COD
+        run: python cod_news.py
