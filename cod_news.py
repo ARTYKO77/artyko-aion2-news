@@ -116,12 +116,25 @@ def get_articles():
         if index % 25 == 0:
             print(f"Analizzati {index}/{len(links)} link")
 
+    
     articles.sort(
         key=lambda article: article["date"],
         reverse=True
     )
 
+    print("\n=== ULTIMI 15 ARTICOLI RICONOSCIUTI ===")
+
+    for article in articles[:15]:
+        print(
+            "DATA:", article["date"].isoformat(),
+            "| TITOLO:", article["title"],
+            "| URL:", article["url"]
+        )
+
+    print("=== FINE CONTROLLO ===\n")
+
     return articles
+
 
 
 def send_discord(article):
