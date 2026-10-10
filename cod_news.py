@@ -1,7 +1,7 @@
 
 import os
-import json
 import re
+import json
 import html
 import time
 import requests
@@ -14,16 +14,20 @@ from bs4 import BeautifulSoup
 BLOG = "https://www.callofduty.com/blog"
 STATE = Path("cod_seen_articles.json")
 WEBHOOK = os.getenv("DISCORD_WEBHOOK_COD", "")
-DRY_RUN = os.getenv("COD_DRY_RUN", "true").lower() == "true"
+DRY_RUN = os.getenv("COD_DRY_RUN", "true").lower() != "false"
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 PATTERN = re.compile(r"^/blog/20\d{2}/\d{2}/")
 
+# Massimo 30 pagine per controllo.
+MAX_ARTICLES = 30
 
-def get_jsonld(article_url):
-    response = requests.get(
-        article_url, headers=HEADERS, timeout=30
-    )
+session = requests.Session()
+session.headers.update(HEADERS)
+
+
+def get_jsonld(url):
+    response = session.get(url, timeout=(5, 10))
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "html.parser")
@@ -36,9 +40,9 @@ def get_jsonld(article_url):
         except (ValueError, TypeError):
             continue
 
-        candidates = data if isinstance(data, list) else [data]
+        items = data if isinstance(data, list) else [data]
 
-        for item in candidates:
+        for item in items:
             if not isinstance(item, dict):
                 continue
 
@@ -51,13 +55,12 @@ def get_jsonld(article_url):
 
 
 def get_articles():
-    response = requests.get(
-        BLOG, headers=HEADERS, timeout=30
-    )
+    response = session.get(BLOG, timeout=(5, 15))
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "html.parser")
-    links = set()
+    links = []
+    seen_links = set()
 
     for a in soup.find_all("a", href=True):
         url = urljoin(BLOG, a["href"])
@@ -68,37 +71,49 @@ def get_articles():
         ):
             continue
 
-        if PATTERN.match(parsed.path):
-            clean_url = parsed._replace(
-                query="", fragment=""
-            ).geturl()
-            links.add(clean_url)
+        if not PATTERN.match(parsed.path):
+            continue
 
-    print("Link articoli trovati:", len(links))
+        clean_url = parsed._replace(
+            query="", fragment=""
+        ).geturl()
+
+        if clean_url not in seen_links:
+            seen_links.add(clean_url)
+            links.append(clean_url)
+
+    print("Link totali:", len(links), flush=True)
+
+    # Il blog mostra normalmente i contenuti
+    # recenti per primi: controlliamo i primi 30.
+    links = links[:MAX_ARTICLES]
 
     articles = []
+    errors = 0
 
-    for index, url in enumerate(sorted(links), 1):
+    for index, url in enumerate(links, 1):
         try:
             data = get_jsonld(url)
 
             title = html.unescape(
                 data.get("headline", "")
             ).strip()
+
             published = data.get("datePublished", "")
 
             if not title or not published:
+                errors += 1
                 continue
+
+            date = datetime.fromisoformat(
+                published.replace("Z", "+00:00")
+            )
 
             image = data.get("image", "")
             if isinstance(image, list):
                 image = image[0] if image else ""
             if isinstance(image, dict):
                 image = image.get("url", "")
-
-            date = datetime.fromisoformat(
-                published.replace("Z", "+00:00")
-            )
 
             articles.append({
                 "url": url,
@@ -111,30 +126,23 @@ def get_articles():
             })
 
         except Exception as error:
-            print("Errore articolo:", url, error)
+            errors += 1
+            print("Errore:", url, error, flush=True)
 
-        if index % 25 == 0:
-            print(f"Analizzati {index}/{len(links)} link")
+        print(
+            f"Analizzati {index}/{len(links)}",
+            flush=True
+        )
 
-    
     articles.sort(
-        key=lambda article: article["date"],
+        key=lambda a: a["date"],
         reverse=True
     )
 
-    print("\n=== ULTIMI 15 ARTICOLI RICONOSCIUTI ===")
+    print("Articoli validi:", len(articles), flush=True)
+    print("Articoli non letti:", errors, flush=True)
 
-    for article in articles[:15]:
-        print(
-            "DATA:", article["date"].isoformat(),
-            "| TITOLO:", article["title"],
-            "| URL:", article["url"]
-        )
-
-    print("=== FINE CONTROLLO ===\n")
-
-    return articles
-
+    return articles, errors
 
 
 def send_discord(article):
@@ -154,40 +162,46 @@ def send_discord(article):
     if article["image"]:
         embed["image"] = {"url": article["image"]}
 
-    response = requests.post(
+    response = session.post(
         WEBHOOK,
         json={"embeds": [embed]},
-        timeout=30
+        timeout=(5, 15)
     )
     response.raise_for_status()
 
 
 def main():
-    articles = get_articles()
-    print("Articoli validi:", len(articles))
+    articles, errors = get_articles()
 
     if not articles:
         raise RuntimeError("Nessun articolo valido")
+
+    if errors:
+        raise RuntimeError(
+            "Alcuni articoli non sono stati letti. "
+            "Nessuna pubblicazione o modifica allo storico."
+        )
 
     if STATE.exists():
         seen = set(json.loads(
             STATE.read_text(encoding="utf-8")
         ))
         selected = [
-            a for a in articles if a["url"] not in seen
+            a for a in articles
+            if a["url"] not in seen
         ]
     else:
         seen = set()
         selected = articles[:3]
 
-    print("Notizie da pubblicare:", len(selected))
+    print("\nNOTIZIE SELEZIONATE:", len(selected))
 
     for article in reversed(selected):
         print(
             "NOTIZIA:",
             article["date"].isoformat(),
             article["title"],
-            article["url"]
+            flush=True
         )
 
         if not DRY_RUN:
@@ -195,21 +209,20 @@ def main():
             time.sleep(2)
 
     if DRY_RUN:
-        print("SIMULAZIONE: nessun messaggio inviato")
+        print(
+            "SIMULAZIONE: nessun messaggio inviato",
+            flush=True
+        )
         return
 
     seen.update(a["url"] for a in articles)
 
     STATE.write_text(
-        json.dumps(
-            sorted(seen),
-            indent=2,
-            ensure_ascii=False
-        ),
+        json.dumps(sorted(seen), indent=2),
         encoding="utf-8"
     )
 
-    print("Storico COD aggiornato")
+    print("Storico aggiornato", flush=True)
 
 
 if __name__ == "__main__":
