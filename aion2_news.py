@@ -1,42 +1,83 @@
 
+import os
+import re
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
-URL = "https://aion2.app/news"
+NEWS_URL = "https://aion2.app/news"
+WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
-def check_news():
-    print("ARTYKO NEWS - Controllo notizie AION 2")
+
+def main():
+    if not WEBHOOK_URL:
+        raise RuntimeError("Webhook Discord non configurato")
 
     response = requests.get(
-        URL,
-        headers={"User-Agent": "Mozilla/5.0"},
+        NEWS_URL,
+        headers={"User-Agent": "ARTYKO-News/1.0"},
         timeout=20
     )
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "html.parser")
-    articles = []
-    seen = set()
+
+    article = None
 
     for link in soup.select('a[href*="/news/"]'):
-        href = urljoin(URL, link.get("href", ""))
-        title = link.get_text(" ", strip=True)
+        url = urljoin(NEWS_URL, link.get("href", ""))
+        parsed = urlparse(url)
 
-        if not title or href in seen:
+        if parsed.netloc != "aion2.app":
             continue
 
-        seen.add(href)
-        articles.append((title, href))
+        if not re.fullmatch(r"/news/\d+", parsed.path):
+            continue
 
-    if not articles:
-        print("Nessun articolo trovato.")
-        print("Potrebbe essere necessario adattare l'estrazione.")
-        return
+        title = link.get_text(" ", strip=True)
 
-    for title, link in articles[:10]:
-        print(f"\nTitolo: {title}")
-        print(f"Link: {link}")
+        if title:
+            article = (title, url)
+            break
+
+    if article is None:
+        raise RuntimeError("Nessuna notizia trovata")
+
+    full_text, url = article
+
+    # Prima prova: ricaviamo il titolo prima
+    # della descrizione, se possibile.
+    title = full_text.split(" The ")[0]
+    title = title[:250]
+
+    payload = {
+        "username": "ARTYKO NEWS",
+        "embeds": [
+            {
+                "title": title,
+                "url": url,
+                "description": (
+                    "📰 Notizia AION 2\n\n"
+                    "Clicca sul titolo per leggere l'articolo."
+                ),
+                "color": 0x00D5C8,
+                "footer": {
+                    "text": "ARTYKO • AION 2 NEWS"
+                }
+            }
+        ]
+    }
+
+    result = requests.post(
+        WEBHOOK_URL,
+        json=payload,
+        timeout=20
+    )
+    result.raise_for_status()
+
+    print("Messaggio di prova inviato a Discord!")
+    print("Articolo:", url)
+
 
 if __name__ == "__main__":
-    check_news()
+    main()
