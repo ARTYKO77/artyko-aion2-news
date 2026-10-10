@@ -1,46 +1,49 @@
 
+import re
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 
 URL = "https://www.callofduty.com/blog"
 
-def check_news():
-    print("ARTYKO COD NEWS - Test lettura notizie")
+print("ARTYKO COD NEWS - Diagnostica")
 
-    response = requests.get(
-        URL,
-        headers={"User-Agent": "Mozilla/5.0"},
-        timeout=30
-    )
-    response.raise_for_status()
+response = requests.get(
+    URL,
+    headers={"User-Agent": "Mozilla/5.0"},
+    timeout=30
+)
+response.raise_for_status()
 
-    soup = BeautifulSoup(response.text, "html.parser")
-    articles = []
-    seen = set()
+print("HTTP:", response.status_code)
+print("HTML ricevuto:", len(response.content), "byte")
 
-    for link in soup.find_all("a", href=True):
-        href = urljoin(URL, link["href"])
-        path = urlparse(href).path
+soup = BeautifulSoup(response.text, "html.parser")
+articles = {}
+pattern = re.compile(r"^/blog/20\d{2}/\d{2}/")
 
-        if "/blog/20" not in path:
-            continue
+for link in soup.find_all("a", href=True):
+    url = urljoin(URL, link["href"])
+    parsed = urlparse(url)
 
-        if href in seen:
-            continue
+    if parsed.netloc != "www.callofduty.com":
+        continue
 
-        seen.add(href)
-        title = link.get_text(" ", strip=True)
+    if not pattern.match(parsed.path):
+        continue
 
-        if title:
-            articles.append((title, href))
+    title = link.get_text(" ", strip=True)
 
-    print(f"Articoli trovati: {len(articles)}")
+    if title:
+        articles[url] = title
 
-    for title, link in articles[:5]:
-        print("Titolo:", title[:200])
-        print("Link:", link)
-        print("---")
+print("Articoli trovati:", len(articles))
 
-if __name__ == "__main__":
-    check_news()
+for url, title in list(articles.items())[:5]:
+    print("Titolo:", title[:150])
+    print("URL:", url)
+    print("---")
+
+if not articles:
+    print("Nessun link articolo nell'HTML.")
+    print("Link totali:", len(soup.find_all("a", href=True)))
