@@ -33,5 +33,22 @@ for script in soup.find_all(
             print("DATA:", item.get("datePublished"))
             print("IMMAGINE:", item.get("image"))
             print("DESCRIZIONE:", item.get("description"))
+            image = item.get("image")
+
+if isinstance(image, list):
+    image = image[0] if image else ""
+
+if isinstance(image, dict):
+    image = image.get("url", "")
+
+if image:
+    result = requests.get(
+        image,
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=15
+    )
+    print("URL IMMAGINE:", image)
+    print("HTTP IMMAGINE:", result.status_code)
+    print("TIPO IMMAGINE:", result.headers.get("Content-Type"))
 
 print("TEST HAJIN COMPLETATO")
