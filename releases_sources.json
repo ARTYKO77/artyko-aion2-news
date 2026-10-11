@@ -9,7 +9,7 @@
     {
       "name": "GameSpot",
       "url": "https://www.gamespot.com/articles/2026-upcoming-games-release-schedule/1100-6534941/",
-      "enabled": true
+      "enabled": false
     }
   ],
   "steam": {
