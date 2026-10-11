@@ -11,8 +11,8 @@ import requests
 from bs4 import BeautifulSoup
 
 # ============================================
-# ARTYKO GAME RELEASES V4 - PREMIUM DRY RUN
-# Nessuna pubblicazione Discord
+# ARTYKO GAME RELEASES V5 - PREMIUM
+# Pubblicazione protetta da RELEASES_DRY_RUN
 # ============================================
 
 ROOT = Path(__file__).resolve().parent
@@ -22,6 +22,9 @@ TODAY = NOW.date()
 
 PREMIUM_FILE = ROOT / "releases_premium.json"
 SOURCES_FILE = ROOT / "releases_sources.json"
+VERIFIED_FILE = ROOT / "releases_verified.json"
+SEEN_FILE = ROOT / "releases_seen.json"
+COVER_FILE = ROOT / "releases_cover.png"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
@@ -526,131 +529,126 @@ def select_premium(games, premium, limit):
     return selected[:limit]
 
 
+
+def load_seen():
+    if not SEEN_FILE.exists():
+        return {"last_published_date": None, "published_games": []}
+    data = load_json(SEEN_FILE)
+    if not isinstance(data.get("published_games", []), list):
+        raise ValueError("published_games deve essere una lista")
+    return data
+
+
+def verified_candidates(selected, verified):
+    approved = verified.get("verified_releases", [])
+    if not isinstance(approved, list):
+        raise ValueError("verified_releases deve essere una lista")
+    result = []
+    for game in selected:
+        for item in approved:
+            if not isinstance(item, dict):
+                continue
+            if (normalize(item.get("title")) == normalize(game["title"])
+                    and item.get("date") == game["date"].isoformat()):
+                official = item.get("official_url", "")
+                if not (isinstance(official, str) and official.startswith("https://")):
+                    print("Saltato: link ufficiale HTTPS assente:", game["title"])
+                    continue
+                result.append({**game, "platforms": item.get("platforms") or game["platforms"],
+                               "official_url": official})
+                break
+    return result
+
+
+def game_key(game):
+    return normalize(game["title"]) + "|" + game["date"].isoformat()
+
+
+def send_discord(games):
+    webhook = os.environ.get("DISCORD_WEBHOOK_RELEASES", "")
+    if not webhook.startswith("https://discord.com/api/webhooks/"):
+        raise RuntimeError("Webhook Discord mancante o non valido")
+    lines = []
+    for game in games:
+        lines.append(f"**{game['title']}** — {game['date'].strftime('%d/%m/%Y')}\n"
+                     f"Piattaforme: {game['platforms']}\n"
+                     f"[Fonte ufficiale]({game['official_url']})")
+    description = "\n\n".join(lines)
+    if len(description) > 4000:
+        raise ValueError("Calendario troppo lungo per un singolo embed")
+    embed = {"title": "🎮 ARTYKO | GAME RELEASES PREMIUM",
+             "description": description,
+             "color": 0x23B7B1,
+             "footer": {"text": "Solo uscite approvate • Orario italiano"}}
+    payload = {"username": "ARTYKO GAME RELEASES", "embeds": [embed]}
+    if COVER_FILE.is_file():
+        embed["image"] = {"url": "attachment://releases_cover.png"}
+        with COVER_FILE.open("rb") as cover:
+            response = SESSION.post(webhook,
+                data={"payload_json": json.dumps(payload, ensure_ascii=False)},
+                files={"files[0]": ("releases_cover.png", cover, "image/png")},
+                timeout=30)
+    else:
+        response = SESSION.post(webhook, json=payload, timeout=30)
+    response.raise_for_status()
+
+
 def main():
     print("=" * 42)
-    print("ARTYKO GAME RELEASES V4 PREMIUM")
+    print("ARTYKO GAME RELEASES V5 PREMIUM")
     print("=" * 42)
-
-    print("Ora italiana:", NOW.isoformat())
-
-    # V4 bloccata in simulazione.
-    # Non contiene chiamate al webhook Discord.
-    print("Modalita': SOLO SIMULAZIONE")
+    now = datetime.now(TZ)
+    today = now.date()
+    dry_run = os.getenv("RELEASES_DRY_RUN", "true").lower() != "false"
+    print("Ora italiana:", now.isoformat())
+    print("Simulazione:", dry_run)
 
     premium = load_json(PREMIUM_FILE)
     config = load_json(SOURCES_FILE)
-
-    days = int(
-        config.get("days_ahead", 7)
-    )
-    limit = int(
-        config.get("max_games", 10)
-    )
-
-    if not 1 <= days <= 31:
-        raise ValueError(
-            "days_ahead non valido."
-        )
-
-    if not 1 <= limit <= 10:
-        raise ValueError(
-            "max_games deve essere tra 1 e 10."
-        )
-
-    end_date = TODAY + timedelta(
-        days=days - 1
-    )
-
-    print(
-        "Periodo:",
-        TODAY,
-        "-",
-        end_date,
-    )
+    verified = load_json(VERIFIED_FILE)
+    seen = load_seen()
+    days = int(config.get("days_ahead", 7))
+    limit = int(config.get("max_games", 10))
+    if not 1 <= days <= 31 or not 1 <= limit <= 10:
+        raise ValueError("days_ahead o max_games fuori intervallo")
+    end_date = today + timedelta(days=days - 1)
+    print("Periodo:", today, "-", end_date)
 
     games = []
-
     try:
-        games.extend(
-            fetch_gamesradar(
-                config,
-                TODAY,
-                end_date,
-            )
-        )
-    except (
-        requests.RequestException,
-        ValueError,
-    ) as exc:
-        print(
-            "Errore GamesRadar:", exc
-        )
+        games.extend(fetch_gamesradar(config, today, end_date))
+    except (requests.RequestException, ValueError, KeyError) as exc:
+        print("Errore GamesRadar:", exc)
+    if config.get("steam", {}).get("enabled", True):
+        games.extend(fetch_steam(today, end_date))
+    else:
+        print("Steam disabilitato da configurazione")
 
-    games.extend(
-        fetch_steam(
-            TODAY,
-            end_date,
-        )
-    )
+    selected = select_premium(merge_games(games), premium, limit)
+    confirmed = verified_candidates(selected, verified)
+    previous = set(seen.get("published_games", []))
+    fresh = [game for game in confirmed if game_key(game) not in previous]
+    print("Premium individuati:", len(selected))
+    print("Corrispondenze con registro verificato:", len(confirmed))
+    print("Nuove uscite approvate:", len(fresh))
+    for game in fresh:
+        print("-", game["title"], game["date"], game["platforms"], game["official_url"])
 
-    merged = merge_games(games)
+    if seen.get("last_published_date") == today.isoformat():
+        print("Riepilogo già pubblicato oggi: nessun invio")
+        return
+    if not fresh:
+        print("Nessuna nuova uscita approvata: nessun invio")
+        return
+    if dry_run:
+        print("SIMULAZIONE COMPLETATA: nessun messaggio Discord, storico invariato")
+        return
 
-    print(
-        "Uscite complessive:",
-        len(merged)
-    )
-
-    selected = select_premium(
-        merged,
-        premium,
-        limit,
-    )
-
-    print(
-        "Grandi uscite selezionate:",
-        len(selected)
-    )
-
-    print("\nANTEPRIMA CALENDARIO PREMIUM:")
-
-    if not selected:
-        print(
-            "Nessuna grande uscita "
-            "individuata nel periodo."
-        )
-
-    for game in selected:
-        print("-" * 42)
-        print(
-            "Titolo:", game["title"]
-        )
-        print(
-            "Data:", game["date"]
-        )
-        print(
-            "Piattaforme:",
-            game["platforms"]
-        )
-        print(
-            "Categoria:",
-            game["category"]
-        )
-        print(
-            "Fonti:",
-            " + ".join(game["sources"])
-        )
-        print(
-            "URL:", game["url"]
-        )
-        print(
-            "Verifica ufficiale:",
-            "NON ESEGUITA"
-        )
-
-    print("\nSIMULAZIONE COMPLETATA.")
-    print(
-        "Nessun messaggio inviato su Discord."
-    )
+    send_discord(fresh)
+    seen["last_published_date"] = today.isoformat()
+    seen["published_games"] = sorted(previous | {game_key(game) for game in fresh})
+    SEEN_FILE.write_text(json.dumps(seen, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print("Riepilogo inviato; storico aggiornato")
 
 
 if __name__ == "__main__":
