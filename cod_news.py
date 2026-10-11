@@ -6,20 +6,21 @@ import html
 import time
 import requests
 
+from io import BytesIO
 from pathlib import Path
 from datetime import datetime
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
+from PIL import Image
 
 BLOG = "https://www.callofduty.com/blog"
 STATE = Path("cod_seen_articles.json")
+
 WEBHOOK = os.getenv("DISCORD_WEBHOOK_COD", "")
 DRY_RUN = os.getenv("COD_DRY_RUN", "true").lower() != "false"
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 PATTERN = re.compile(r"^/blog/20\d{2}/\d{2}/")
-
-# Massimo 30 pagine per controllo.
 MAX_ARTICLES = 30
 
 session = requests.Session()
@@ -59,6 +60,7 @@ def get_articles():
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "html.parser")
+
     links = []
     seen_links = set()
 
@@ -84,8 +86,6 @@ def get_articles():
 
     print("Link totali:", len(links), flush=True)
 
-    # Il blog mostra normalmente i contenuti
-    # recenti per primi: controlliamo i primi 30.
     links = links[:MAX_ARTICLES]
 
     articles = []
@@ -110,8 +110,10 @@ def get_articles():
             )
 
             image = data.get("image", "")
+
             if isinstance(image, list):
                 image = image[0] if image else ""
+
             if isinstance(image, dict):
                 image = image.get("url", "")
 
@@ -159,14 +161,72 @@ def send_discord(article):
         }
     }
 
-    if article["image"]:
-        embed["image"] = {"url": article["image"]}
+    image_url = article.get("image")
+
+    if image_url:
+        try:
+            image_response = session.get(
+                image_url,
+                timeout=(5, 15)
+            )
+            image_response.raise_for_status()
+
+            image_bytes = image_response.content
+
+            if len(image_bytes) > 8 * 1024 * 1024:
+                raise ValueError("Immagine troppo grande")
+
+            picture = Image.open(BytesIO(image_bytes))
+            picture = picture.convert("RGB")
+
+            output = BytesIO()
+
+            picture.save(
+                output,
+                format="JPEG",
+                quality=85
+            )
+
+            output.seek(0)
+
+            embed["image"] = {
+                "url": "attachment://cod_news.jpg"
+            }
+
+            response = session.post(
+                WEBHOOK,
+                data={
+                    "payload_json": json.dumps({
+                        "embeds": [embed]
+                    })
+                },
+                files={
+                    "files[0]": (
+                        "cod_news.jpg",
+                        output,
+                        "image/jpeg"
+                    )
+                },
+                timeout=(5, 30)
+            )
+
+            response.raise_for_status()
+            return
+
+        except (requests.RequestException, OSError, ValueError) as error:
+            print(
+                "Immagine non disponibile:",
+                error,
+                flush=True
+            )
+            embed.pop("image", None)
 
     response = session.post(
         WEBHOOK,
         json={"embeds": [embed]},
         timeout=(5, 15)
     )
+
     response.raise_for_status()
 
 
@@ -183,9 +243,12 @@ def main():
         )
 
     if STATE.exists():
-        seen = set(json.loads(
-            STATE.read_text(encoding="utf-8")
-        ))
+        seen = set(
+            json.loads(
+                STATE.read_text(encoding="utf-8")
+            )
+        )
+
         selected = [
             a for a in articles
             if a["url"] not in seen
@@ -194,7 +257,10 @@ def main():
         seen = set()
         selected = articles[:3]
 
-    print("\nNOTIZIE SELEZIONATE:", len(selected))
+    print(
+        "\nNOTIZIE SELEZIONATE:",
+        len(selected)
+    )
 
     for article in reversed(selected):
         print(
@@ -215,7 +281,9 @@ def main():
         )
         return
 
-    seen.update(a["url"] for a in articles)
+    seen.update(
+        a["url"] for a in articles
+    )
 
     STATE.write_text(
         json.dumps(sorted(seen), indent=2),
