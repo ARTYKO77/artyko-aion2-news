@@ -10,6 +10,9 @@ on:
         type: boolean
         default: false
 
+  schedule:
+    - cron: "0 7,8 * * *"
+
 permissions:
   contents: write
 
@@ -36,14 +39,41 @@ jobs:
       - name: Installa librerie
         run: pip install requests beautifulsoup4
 
+      - name: Verifica orario italiano
+        id: orario
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          event_name = os.environ.get("EVENT_NAME", "")
+          publish = os.environ.get("PUBLISH", "").lower() == "true"
+
+          if event_name == "schedule":
+              now = datetime.now(ZoneInfo("Europe/Rome"))
+              allowed = now.hour == 9
+              print(f"Ora italiana: {now.isoformat()}")
+              print(f"Pubblicazione automatica consentita: {allowed}")
+          else:
+              allowed = publish
+              print(f"Pubblicazione manuale richiesta: {allowed}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"publish={'true' if allowed else 'false'}\n")
+          PY
+
       - name: Controlla calendario uscite
         env:
           DISCORD_WEBHOOK_RELEASES: ${{ secrets.DISCORD_WEBHOOK_RELEASES }}
-          RELEASES_DRY_RUN: ${{ inputs.publish == true && 'false' || 'true' }}
+          RELEASES_DRY_RUN: ${{ steps.orario.outputs.publish == 'true' && 'false' || 'true' }}
         run: python -u releases_news.py
 
       - name: Salva storico pubblicazioni
-        if: ${{ inputs.publish == true }}
+        if: ${{ steps.orario.outputs.publish == 'true' }}
         run: |
           if [ ! -f releases_seen.json ]; then
             echo "Storico mancante."
