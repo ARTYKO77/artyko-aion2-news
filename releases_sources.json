@@ -1,0 +1,21 @@
+
+{
+  "editorial_sources": [
+    {
+      "name": "GamesRadar",
+      "url": "https://www.gamesradar.com/video-game-release-dates/",
+      "enabled": true
+    },
+    {
+      "name": "GameSpot",
+      "url": "https://www.gamespot.com/articles/2026-upcoming-games-release-schedule/1100-6534941/",
+      "enabled": true
+    }
+  ],
+  "steam": {
+    "enabled": true
+  },
+  "days_ahead": 7,
+  "max_games": 10,
+  "timezone": "Europe/Rome"
+}
