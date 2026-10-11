@@ -10,7 +10,7 @@ import requests
 
 # ============================================================
 # ARTYKO | AION 2 EVENTS
-# Calendario EU e promemoria Discord
+# Dashboard Discord: calendario + prossimo evento
 # ============================================================
 
 UTC = timezone.utc
@@ -30,15 +30,6 @@ STATE_FILE = "aion2_events_state.json"
 SOURCE_URL = "https://aion2.app/news/51"
 
 CALENDAR_LIMIT = 12
-
-# Avviso ideale: 5 minuti prima.
-REMINDER_MINUTES = 5
-
-# Recupero ritardi: fino a 20 minuti prima dell'evento.
-# Se il controllo arriva tardi, inviamo comunque l'avviso
-# prima dell'inizio, indicando il tempo reale rimanente.
-REMINDER_LOOKAHEAD_MINUTES = 20
-
 
 EVENTS = [
     {
@@ -69,7 +60,9 @@ def load_state():
     if not os.path.exists(STATE_FILE):
         return {
             "calendar_message_id": None,
+            "next_event_message_id": None,
             "sent_reminders": [],
+            "old_reminder_message_ids": [],
         }
 
     with open(STATE_FILE, "r", encoding="utf-8") as file:
@@ -79,10 +72,19 @@ def load_state():
         raise ValueError("Storico eventi non valido.")
 
     state.setdefault("calendar_message_id", None)
+    state.setdefault("next_event_message_id", None)
     state.setdefault("sent_reminders", [])
+    state.setdefault("old_reminder_message_ids", [])
 
     if not isinstance(state["sent_reminders"], list):
         raise ValueError("Elenco promemoria non valido.")
+
+    if not isinstance(
+        state["old_reminder_message_ids"], list
+    ):
+        raise ValueError(
+            "Elenco messaggi da eliminare non valido."
+        )
 
     return state
 
@@ -90,7 +92,9 @@ def load_state():
 def save_state(state):
     temporary_file = STATE_FILE + ".tmp"
 
-    with open(temporary_file, "w", encoding="utf-8") as file:
+    with open(
+        temporary_file, "w", encoding="utf-8"
+    ) as file:
         json.dump(
             state,
             file,
@@ -108,7 +112,10 @@ def calculate_events(now):
     local_now = now.astimezone(SERVER_TZ)
 
     for day_offset in range(4):
-        day = local_now.date() + timedelta(days=day_offset)
+        day = (
+            local_now.date()
+            + timedelta(days=day_offset)
+        )
 
         for event_type in EVENTS:
             for minute_of_day in event_type["minutes"]:
@@ -127,10 +134,9 @@ def calculate_events(now):
                     )
 
                     start_utc = local_start.astimezone(UTC)
-
-                    # Esclude gli orari inesistenti durante
-                    # il passaggio all'ora legale.
-                    roundtrip = start_utc.astimezone(SERVER_TZ)
+                    roundtrip = start_utc.astimezone(
+                        SERVER_TZ
+                    )
 
                     if (
                         roundtrip.date() != day
@@ -142,16 +148,18 @@ def calculate_events(now):
                     if start_utc <= now:
                         continue
 
-                    timestamp = int(start_utc.timestamp())
+                    timestamp = int(
+                        start_utc.timestamp()
+                    )
 
-                    event_key = (
+                    key = (
                         f"{event_type['id']}:{timestamp}"
                     )
 
-                    if event_key in seen:
+                    if key in seen:
                         continue
 
-                    seen.add(event_key)
+                    seen.add(key)
 
                     results.append({
                         "id": event_type["id"],
@@ -160,7 +168,7 @@ def calculate_events(now):
                         "duration": event_type["duration"],
                         "start": start_utc,
                         "timestamp": timestamp,
-                        "key": event_key,
+                        "key": key,
                     })
 
     results.sort(
@@ -184,14 +192,12 @@ def build_calendar(events, now):
             f"🕒 <t:{timestamp}:F>\n"
             f"⏳ <t:{timestamp}:R> · "
             f"{event['duration']} min · "
-            f"⌛ In programma"
+            "⌛ In programma"
         )
 
-    description = "\n\n".join(lines)
-
-    updated_at = now.astimezone(SERVER_TZ).strftime(
-        "%H:%M"
-    )
+    updated_at = now.astimezone(
+        SERVER_TZ
+    ).strftime("%H:%M")
 
     return {
         "username": "ARTYKO AION 2 EVENTS",
@@ -204,7 +210,7 @@ def build_calendar(events, now):
                     "📅 ARTYKO | "
                     "CALENDARIO EVENTI AION 2"
                 ),
-                "description": description,
+                "description": "\n\n".join(lines),
                 "color": 0x00D8B4,
                 "footer": {
                     "text": (
@@ -219,25 +225,58 @@ def build_calendar(events, now):
     }
 
 
-def build_reminder(event, now):
+def build_next_event(events, now):
+    if not events:
+        raise RuntimeError(
+            "Nessun evento futuro disponibile."
+        )
+
+    next_start = events[0]["start"]
+
+    simultaneous = [
+        event
+        for event in events
+        if event["start"] == next_start
+    ]
+
+    timestamp = simultaneous[0]["timestamp"]
+
     seconds_left = max(
         0,
-        int((event["start"] - now).total_seconds())
+        int((next_start - now).total_seconds())
     )
 
-    minutes_left = max(
-        1,
-        (seconds_left + 59) // 60
-    )
+    minutes_left = (
+        seconds_left + 59
+    ) // 60
 
-    if minutes_left <= REMINDER_MINUTES:
-        notice = (
-            f"**Mancano circa {minutes_left} minuti!**"
-        )
+    if minutes_left <= 5:
+        status = "🚨 **EVENTO IMMINENTE!**"
+        color = 0x32FF87
+    elif minutes_left <= 20:
+        status = "🔔 **PREPARATI, ARTYKO!**"
+        color = 0x00D8B4
     else:
-        notice = (
-            f"**Tra circa {minutes_left} minuti!**"
+        status = "📡 **PROSSIMO EVENTO**"
+        color = 0x00B8FF
+
+    event_lines = []
+
+    for event in simultaneous:
+        event_lines.append(
+            f"**{event['icon']} {event['name']}**\n"
+            f"⌛ Durata: {event['duration']} minuti"
         )
+
+    description = (
+        f"{status}\n\n"
+        + "\n\n".join(event_lines)
+        + "\n\n"
+        + f"🕒 Inizio: <t:{timestamp}:F>\n"
+        + f"⏳ Countdown: <t:{timestamp}:R>\n"
+        + "🌍 Server: EU\n\n"
+        + "⚔️ **Preparati, ARTYKO!**"
+    )
 
     return {
         "username": "ARTYKO AION 2 EVENTS",
@@ -247,24 +286,14 @@ def build_reminder(event, now):
         "embeds": [
             {
                 "title": (
-                    f"🔔 {event['icon']} "
-                    f"{event['name']}"
+                    "🔔 ARTYKO | PROSSIMO EVENTO"
                 ),
-                "description": (
-                    f"{notice}\n\n"
-                    f"🕒 Inizio: "
-                    f"<t:{event['timestamp']}:F>\n"
-                    f"⏳ Countdown: "
-                    f"<t:{event['timestamp']}:R>\n"
-                    f"⌛ Durata: "
-                    f"{event['duration']} minuti\n\n"
-                    "⚔️ **Preparati, ARTYKO!**"
-                ),
-                "color": 0x32FF87,
+                "description": description,
+                "color": color,
                 "footer": {
                     "text": (
                         "ARTYKO | AION 2 EVENTS · "
-                        "Server EU"
+                        "Aggiornamento automatico"
                     )
                 },
             }
@@ -272,7 +301,7 @@ def build_reminder(event, now):
     }
 
 
-def discord_request(method, url, payload):
+def discord_request(method, url, payload=None):
     response = requests.request(
         method,
         url,
@@ -290,7 +319,7 @@ def discord_request(method, url, payload):
     return response
 
 
-def publish_calendar(payload, message_id):
+def publish_or_update(payload, message_id, label):
     webhook = WEBHOOK_URL.rstrip("/")
 
     if message_id:
@@ -305,20 +334,18 @@ def publish_calendar(payload, message_id):
         )
 
         if response.status_code < 400:
-            print(
-                "Calendario Discord aggiornato."
-            )
+            print(f"{label} aggiornato.")
             return message_id
 
         if response.status_code != 404:
             raise RuntimeError(
-                "Errore aggiornamento calendario: "
+                f"Errore aggiornamento {label}: "
                 f"HTTP {response.status_code} "
                 f"{response.text[:300]}"
             )
 
         print(
-            "Calendario precedente non trovato. "
+            f"{label} precedente non trovato. "
             "Ne pubblico uno nuovo."
         )
 
@@ -335,79 +362,62 @@ def publish_calendar(payload, message_id):
 
     if not new_id:
         raise RuntimeError(
-            "Discord non ha restituito "
-            "l'ID del calendario."
+            f"Discord non ha restituito "
+            f"l'ID per {label}."
         )
 
-    print(
-        "Nuovo calendario Discord pubblicato."
-    )
+    print(f"{label} pubblicato.")
 
     return new_id
 
 
-def publish_reminder(event, now):
-    payload = build_reminder(event, now)
+def cleanup_known_old_reminders(state):
+    """
+    Elimina solo gli eventuali messaggi
+    esplicitamente registrati nello storico.
 
-    discord_request(
-        "POST",
-        WEBHOOK_URL,
-        payload,
+    I promemoria della versione precedente
+    non salvavano i loro ID, quindi non possono
+    essere individuati automaticamente.
+    """
+
+    message_ids = list(
+        state["old_reminder_message_ids"]
     )
 
-    print(
-        f"Promemoria inviato: "
-        f"{event['name']} "
-        f"({event['key']})"
-    )
+    if not message_ids:
+        print(
+            "Nessun vecchio promemoria "
+            "registrato da eliminare."
+        )
+        return
 
+    webhook = WEBHOOK_URL.rstrip("/")
 
-def find_due_reminders(events, now, sent):
-    due = []
+    for message_id in message_ids:
+        url = (
+            f"{webhook}/messages/{message_id}"
+        )
 
-    for event in events:
-        seconds_left = (
-            event["start"] - now
-        ).total_seconds()
+        response = requests.delete(
+            url,
+            timeout=20,
+        )
 
-        if event["key"] in sent:
-            continue
-
-        # Non inviare avvisi per eventi già iniziati.
-        if seconds_left <= 0:
-            continue
-
-        # Finestra estesa per compensare
-        # i ritardi di GitHub Actions.
-        if seconds_left > (
-            REMINDER_LOOKAHEAD_MINUTES * 60
-        ):
-            continue
-
-        due.append(event)
-
-    return due
-
-
-def prune_reminders(state, now):
-    cutoff = int(
-        (now - timedelta(days=2)).timestamp()
-    )
-
-    kept = []
-
-    for key in state["sent_reminders"]:
-        try:
-            timestamp = int(
-                key.rsplit(":", 1)[1]
+        if response.status_code in (200, 204, 404):
+            state["old_reminder_message_ids"].remove(
+                message_id
             )
-        except (ValueError, IndexError):
-            continue
-
-        if timestamp >= cutoff:
-            kept.append(key)
-
-    state["sent_reminders"] = kept
+            save_state(state)
+            print(
+                "Vecchio promemoria eliminato: "
+                f"{message_id}"
+            )
+        else:
+            raise RuntimeError(
+                "Errore eliminazione promemoria: "
+                f"HTTP {response.status_code}"
+            )
 
 
 def main():
@@ -448,23 +458,22 @@ def main():
             f"{event['duration']} min"
         )
 
-    calendar = build_calendar(events, now)
+    calendar_payload = build_calendar(
+        events, now
+    )
 
-    sent = set(state["sent_reminders"])
-
-    due = find_due_reminders(
-        events,
-        now,
-        sent,
+    next_event_payload = build_next_event(
+        events, now
     )
 
     print(
-        "\nCalendario preparato: "
-        "📅 ARTYKO | CALENDARIO EVENTI AION 2"
+        "\nDashboard preparata:"
     )
-
     print(
-        f"Promemoria da inviare: {len(due)}"
+        "1. 📅 Calendario eventi"
+    )
+    print(
+        "2. 🔔 Prossimo evento"
     )
 
     if DRY_RUN:
@@ -481,28 +490,35 @@ def main():
             "Webhook Discord non configurato."
         )
 
-    calendar_id = publish_calendar(
-        calendar,
+    calendar_id = publish_or_update(
+        calendar_payload,
         state["calendar_message_id"],
+        "Calendario Discord",
     )
 
     if calendar_id != state["calendar_message_id"]:
         state["calendar_message_id"] = calendar_id
         save_state(state)
 
-    for event in due:
-        publish_reminder(event, now)
+    next_event_id = publish_or_update(
+        next_event_payload,
+        state["next_event_message_id"],
+        "Pannello prossimo evento",
+    )
 
-        state["sent_reminders"].append(
-            event["key"]
-        )
-
+    if next_event_id != state["next_event_message_id"]:
+        state["next_event_message_id"] = next_event_id
         save_state(state)
 
-    prune_reminders(state, now)
-    save_state(state)
+    cleanup_known_old_reminders(state)
 
-    print("\nEsecuzione completata.")
+    print(
+        "\nDashboard aggiornata correttamente."
+    )
+    print(
+        "Nessun nuovo promemoria separato inviato."
+    )
+    print("Esecuzione completata.")
 
 
 if __name__ == "__main__":
