@@ -1,44 +1,42 @@
 
 import requests
-from bs4 import BeautifulSoup
+import json
 
-URL = "https://www.escapefromtarkov.com/news"
+APP_ID = 3932890
 
-print("ARTYKO TARKOV NEWS - TEST FONTE", flush=True)
+URL = "https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/"
 
-try:
-    response = requests.get(
-        URL,
-        headers={"User-Agent": "Mozilla/5.0"},
-        timeout=20
-    )
+print("ARTYKO TARKOV NEWS - TEST STEAM", flush=True)
 
-    print("HTTP STATUS:", response.status_code)
-    print("URL FINALE:", response.url)
-    print("DIMENSIONE PAGINA:", len(response.content))
+response = requests.get(
+    URL,
+    params={
+        "appid": APP_ID,
+        "count": 5,
+        "maxlength": 500,
+        "format": "json"
+    },
+    headers={
+        "User-Agent": "ARTYKO-News-Bot/1.0"
+    },
+    timeout=20
+)
 
-    response.raise_for_status()
+print("HTTP STATUS:", response.status_code, flush=True)
+response.raise_for_status()
 
-    soup = BeautifulSoup(response.text, "html.parser")
+data = response.json()
+articles = data.get("appnews", {}).get("newsitems", [])
 
-    print("TITOLO PAGINA:",
-          soup.title.get_text(strip=True)
-          if soup.title else "Non trovato")
+print("NOTIZIE TROVATE:", len(articles), flush=True)
 
-    links = []
+for article in articles:
+    print("\n-------------------")
+    print("TITOLO:", article.get("title"))
+    print("DATA:", article.get("date"))
+    print("FONTE:", article.get("feedlabel"))
+    print("URL:", article.get("url"))
+    print("CONTENUTO:", article.get("contents", "")[:300])
 
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        title = a.get_text(" ", strip=True)
-
-        if title and href:
-            links.append((title, href))
-
-    print("LINK TROVATI:", len(links))
-
-    for title, href in links[:20]:
-        print("LINK:", title[:100], "|", href)
-
-except Exception as error:
-    print("ERRORE:", str(error))
-    raise
+if not articles:
+    print("ATTENZIONE: Steam non ha restituito notizie.")
