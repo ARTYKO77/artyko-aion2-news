@@ -3,9 +3,19 @@ name: ARTYKO MMO News
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Pubblicare le notizie MMO su Discord?"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: artyko-mmo-news
+  cancel-in-progress: false
 
 jobs:
   mmo-news:
@@ -24,7 +34,24 @@ jobs:
       - name: Installa librerie
         run: pip install requests feedparser
 
-      - name: Test fonti MMO
+      - name: Controlla notizie MMO
         env:
-          MMO_DRY_RUN: 'true'
+          DISCORD_WEBHOOK_MMO: ${{ secrets.DISCORD_WEBHOOK_MMO }}
+          MMO_DRY_RUN: ${{ inputs.publish == true && 'false' || 'true' }}
         run: python -u mmo_news.py
+
+      - name: Salva storico notizie MMO
+        if: ${{ inputs.publish == true }}
+        run: |
+          if [ -f mmo_seen_articles.json ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add mmo_seen_articles.json
+
+            if ! git diff --cached --quiet; then
+              git commit -m "Update MMO news history"
+              git push
+            else
+              echo "Nessuna nuova notizia MMO da salvare."
+            fi
+          fi
