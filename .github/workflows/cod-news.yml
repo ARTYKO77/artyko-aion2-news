@@ -2,6 +2,9 @@
 name: ARTYKO COD News
 
 on:
+  schedule:
+    - cron: '7,27,47 * * * *'
+
   workflow_dispatch:
     inputs:
       publish:
@@ -37,11 +40,11 @@ jobs:
       - name: Esegui ARTYKO COD NEWS
         env:
           DISCORD_WEBHOOK_COD: ${{ secrets.DISCORD_WEBHOOK_COD }}
-          COD_DRY_RUN: ${{ inputs.publish && 'false' || 'true' }}
+          COD_DRY_RUN: ${{ github.event_name == 'schedule' || inputs.publish == true && 'false' || 'true' }}
         run: python -u cod_news.py
 
       - name: Salva storico articoli
-        if: ${{ inputs.publish }}
+        if: ${{ github.event_name == 'schedule' || inputs.publish == true }}
         run: |
           if [ -f cod_seen_articles.json ]; then
             git config user.name "github-actions[bot]"
