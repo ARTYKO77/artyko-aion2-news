@@ -2,8 +2,11 @@
 name: ARTYKO AION 2 Events
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"
+  # PROGRAMMAZIONE AUTOMATICA TEMPORANEAMENTE DISATTIVATA
+  # La riattiveremo dopo aver completato i test.
+  #
+  # schedule:
+  #   - cron: "*/5 * * * *"
 
   workflow_dispatch:
     inputs:
