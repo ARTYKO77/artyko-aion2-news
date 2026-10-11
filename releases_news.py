@@ -1,7 +1,7 @@
 
+import json
 import os
 import re
-import json
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -11,27 +11,17 @@ import requests
 from bs4 import BeautifulSoup
 
 # ============================================
-# ARTYKO GAME RELEASES V3
-# STEAM + GAMESRADAR MULTIPIATTAFORMA
+# ARTYKO GAME RELEASES V4 - PREMIUM DRY RUN
+# Nessuna pubblicazione Discord
 # ============================================
 
-BASE_DIR = Path(__file__).resolve().parent
-
-WEBHOOK = os.getenv("DISCORD_WEBHOOK_RELEASES", "")
-DRY_RUN = os.getenv(
-    "RELEASES_DRY_RUN", "true"
-).lower() != "false"
-
+ROOT = Path(__file__).resolve().parent
 TZ = ZoneInfo("Europe/Rome")
 NOW = datetime.now(TZ)
 TODAY = NOW.date()
 
-WATCHLIST = BASE_DIR / "releases_watchlist.json"
-SOURCES = BASE_DIR / "releases_sources.json"
-HISTORY = BASE_DIR / "releases_seen.json"
-COVER = BASE_DIR / "releases_cover.png"
-
-MAX_STEAM_PAGES = 10
+PREMIUM_FILE = ROOT / "releases_premium.json"
+SOURCES_FILE = ROOT / "releases_sources.json"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
@@ -39,13 +29,13 @@ HEADERS = {
 }
 
 MONTHS = {
-    name.upper(): number
-    for number, name in enumerate(
+    name.upper(): index
+    for index, name in enumerate(
         [
             "January", "February", "March",
             "April", "May", "June",
             "July", "August", "September",
-            "October", "November", "December"
+            "October", "November", "December",
         ],
         start=1,
     )
@@ -62,151 +52,101 @@ PLATFORM_PATTERN = re.compile(
     r"^(.*?)\s*\(([^()]*)\)$"
 )
 
-EXCLUDED = (
-    "demo", "playtest", "soundtrack",
-    "artbook", "art book", "wallpaper",
-    "dedicated server", "beta test",
+EXCLUDED_CONTENT = (
+    "demo",
+    "playtest",
+    "soundtrack",
+    "artbook",
+    "art book",
+    "wallpaper",
+    "dedicated server",
+    "beta test",
     "test server",
 )
 
-EDITION_TERMS = (
-    "deluxe edition", "gold edition",
-    "ultimate edition", "complete edition",
-    "remastered", "remake", "definitive edition",
-    "anniversary edition",
-)
-
-MAJOR_TERMS = (
-    "resident evil", "final fantasy",
-    "warhammer", "call of duty",
-    "battlefield", "grand theft auto",
-    "gta", "assassin s creed",
-    "monster hunter", "silent hill",
-    "the witcher", "gears of war",
-    "doom", "elder scrolls",
-    "fable", "dragon quest",
-    "kingdom hearts", "mass effect",
-    "star wars", "zelda", "pokemon",
-    "mario", "minecraft", "diablo",
-    "world of warcraft", "aion",
-    "tomb raider", "metal gear",
-    "forza", "halo", "stalker",
-    "cyberpunk", "borderlands",
-)
-
-session = requests.Session()
-session.headers.update(HEADERS)
+SESSION = requests.Session()
+SESSION.headers.update(HEADERS)
 
 
 def normalize(value):
-    return " ".join(
-        re.sub(
-            r"[^a-z0-9]+", " ",
-            (value or "").casefold()
-        ).split()
-    )
+    value = (value or "").casefold()
+    value = re.sub(r"[^a-z0-9]+", " ", value)
+    return " ".join(value.split())
 
 
-def load_json(path, default):
-    try:
-        return json.loads(
-            path.read_text(encoding="utf-8")
-        )
-    except (OSError, ValueError):
-        return default
-
-
-def load_watchlist():
-    data = load_json(WATCHLIST, {})
-    titles = data.get("priority_games", [])
-
-    return [
-        normalize(title)
-        for title in titles
-        if isinstance(title, str)
-    ]
-
-
-def load_config():
-    config = load_json(SOURCES, {})
-
-    if not config:
+def load_json(path):
+    if not path.exists():
         raise RuntimeError(
-            "releases_sources.json mancante o non valido."
+            f"File obbligatorio mancante: {path.name}"
         )
 
-    days = int(config.get("days_ahead", 7))
-    max_games = int(config.get("max_games", 10))
-
-    if not 1 <= days <= 31:
-        raise ValueError("days_ahead non valido.")
-
-    if not 1 <= max_games <= 10:
-        raise ValueError("max_games deve essere tra 1 e 10.")
-
-    return config, days, max_games
-
-
-def load_history():
-    return load_json(HISTORY, {})
-
-
-def save_history(data):
-    HISTORY.write_text(
-        json.dumps(
-            data, indent=2,
-            ensure_ascii=False
-        ),
-        encoding="utf-8"
+    data = json.loads(
+        path.read_text(encoding="utf-8")
     )
 
-
-def is_excluded(title):
-    text = normalize(title)
-    return any(
-        re.search(
-            rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])",
-            text
+    if not isinstance(data, dict):
+        raise RuntimeError(
+            f"Formato JSON non valido: {path.name}"
         )
-        for term in EXCLUDED
-    )
+
+    return data
 
 
-def is_priority(title, watchlist):
-    text = normalize(title)
+def phrase_matches(title, phrase):
+    title_words = normalize(title).split()
+    phrase_words = normalize(phrase).split()
+
+    if not phrase_words:
+        return False
+
+    size = len(phrase_words)
 
     return any(
-        text == item
-        or text.startswith(item + " ")
-        for item in watchlist
-        if item
+        title_words[i:i + size] == phrase_words
+        for i in range(
+            len(title_words) - size + 1
+        )
     )
 
 
-def score_game(game, watchlist):
-    title = normalize(game["title"])
+def matches_any(title, phrases):
+    return any(
+        phrase_matches(title, phrase)
+        for phrase in phrases
+        if isinstance(phrase, str)
+    )
 
-    score = 0
 
-    if is_priority(game["title"], watchlist):
-        score += 100
+def is_excluded(title, premium):
+    if matches_any(title, EXCLUDED_CONTENT):
+        return True
 
-    if any(term in title for term in MAJOR_TERMS):
-        score += 40
+    return matches_any(
+        title,
+        premium.get("exclude_editions", [])
+    )
 
-    if "GamesRadar" in game["sources"]:
-        score += 20
 
-    if "Steam" in game["sources"]:
-        score += 10
+def premium_category(title, premium):
+    if matches_any(
+        title,
+        premium.get("approved_games", [])
+    ):
+        return "Titolo approvato"
 
-    if game["platforms"] != "PC":
-        score += 5
+    if matches_any(
+        title,
+        premium.get("major_mmos", [])
+    ):
+        return "MMORPG / MMO"
 
-    if any(term in title for term in EDITION_TERMS):
-        score -= 15
+    if matches_any(
+        title,
+        premium.get("major_franchises", [])
+    ):
+        return "Grande franchise"
 
-    return score
+    return None
 
 
 def parse_steam_date(value):
@@ -225,18 +165,18 @@ def parse_steam_date(value):
                 value, fmt
             ).date()
         except ValueError:
-            pass
+            continue
 
     return None
 
 
 def fetch_steam(today, end_date):
     games = []
-    successful_pages = 0
+    pages_ok = 0
 
-    for page in range(MAX_STEAM_PAGES):
+    for page in range(10):
         try:
-            response = session.get(
+            response = SESSION.get(
                 "https://store.steampowered.com/search/results/",
                 params={
                     "start": page * 50,
@@ -249,14 +189,16 @@ def fetch_steam(today, end_date):
             )
             response.raise_for_status()
 
+            html = response.json().get(
+                "results_html", ""
+            )
+
             rows = BeautifulSoup(
-                response.json().get(
-                    "results_html", ""
-                ),
-                "html.parser"
+                html, "html.parser"
             ).select("a.search_result_row")
 
-            successful_pages += 1
+            pages_ok += 1
+
             print(
                 f"Steam pagina {page + 1}: "
                 f"{len(rows)} giochi"
@@ -266,33 +208,30 @@ def fetch_steam(today, end_date):
                 break
 
             for row in rows:
-                appid = row.get(
-                    "data-ds-appid", ""
+                appid = str(
+                    row.get("data-ds-appid", "")
                 ).split(",")[0]
 
-                title_element = row.select_one(
+                title_node = row.select_one(
                     ".title"
                 )
-                date_element = row.select_one(
+                date_node = row.select_one(
                     ".search_released"
                 )
 
                 if not (
                     appid.isdigit()
-                    and title_element
-                    and date_element
+                    and title_node
+                    and date_node
                 ):
                     continue
 
-                title = title_element.get_text(
+                title = title_node.get_text(
                     " ", strip=True
                 )
 
-                if is_excluded(title):
-                    continue
-
                 release_date = parse_steam_date(
-                    date_element.get_text(
+                    date_node.get_text(
                         " ", strip=True
                     )
                 )
@@ -313,17 +252,20 @@ def fetch_steam(today, end_date):
                     ),
                     "sources": ["Steam"],
                     "note": "",
-                    "officially_verified": False,
                 })
 
             time.sleep(0.2)
 
-        except (requests.RequestException, ValueError) as exc:
+        except (
+            requests.RequestException,
+            ValueError,
+        ) as exc:
             print(
-                f"Errore Steam pagina {page + 1}: {exc}"
+                f"Errore Steam pagina {page + 1}: "
+                f"{exc}"
             )
 
-    if successful_pages == 0:
+    if pages_ok == 0:
         print(
             "ATTENZIONE: Steam non disponibile."
         )
@@ -332,12 +274,13 @@ def fetch_steam(today, end_date):
 
 
 def fetch_gamesradar(config, today, end_date):
+    sources = config.get(
+        "editorial_sources", []
+    )
+
     source = next(
         (
-            item
-            for item in config.get(
-                "editorial_sources", []
-            )
+            item for item in sources
             if (
                 item.get("name") == "GamesRadar"
                 and item.get("enabled")
@@ -346,10 +289,11 @@ def fetch_gamesradar(config, today, end_date):
         None,
     )
 
-    if source is None:
+    if not source:
+        print("GamesRadar disabilitato.")
         return []
 
-    response = session.get(
+    response = SESSION.get(
         source["url"], timeout=30
     )
     response.raise_for_status()
@@ -380,7 +324,8 @@ def fetch_gamesradar(config, today, end_date):
         )
 
         year_match = re.search(
-            r"\b20\d{2}\b", heading_text
+            r"\b20\d{2}\b",
+            heading_text
         )
 
         if not month_name or not year_match:
@@ -392,16 +337,13 @@ def fetch_gamesradar(config, today, end_date):
         section_month = MONTHS[month_name]
 
         month_index = (
-            section_year * 12
-            + section_month
+            section_year * 12 + section_month
         )
         start_index = (
-            today.year * 12
-            + today.month
+            today.year * 12 + today.month
         )
         end_index = (
-            end_date.year * 12
-            + end_date.month
+            end_date.year * 12 + end_date.month
         )
 
         if not (
@@ -411,8 +353,9 @@ def fetch_gamesradar(config, today, end_date):
 
         sibling = heading.find_next_sibling()
 
-        while sibling and sibling.name not in (
-            "h2", "h3"
+        while (
+            sibling
+            and sibling.name not in ("h2", "h3")
         ):
             if sibling.name in ("ul", "ol"):
                 for li in sibling.find_all(
@@ -429,9 +372,13 @@ def fetch_gamesradar(config, today, end_date):
                     if not match:
                         continue
 
-                    info, month_text, day, year_text, note = (
-                        match.groups()
-                    )
+                    (
+                        info,
+                        month_text,
+                        day_text,
+                        year_text,
+                        note,
+                    ) = match.groups()
 
                     month_number = MONTHS.get(
                         month_text.upper()
@@ -446,8 +393,9 @@ def fetch_gamesradar(config, today, end_date):
 
                     try:
                         release_date = datetime(
-                            year, month_number,
-                            int(day)
+                            year,
+                            month_number,
+                            int(day_text),
                         ).date()
                     except ValueError:
                         continue
@@ -464,18 +412,19 @@ def fetch_gamesradar(config, today, end_date):
                     )
 
                     if platform_match:
-                        title = platform_match.group(
-                            1
-                        ).strip()
-                        platforms = platform_match.group(
-                            2
-                        ).strip()
+                        title = (
+                            platform_match.group(1)
+                            .strip()
+                        )
+                        platforms = (
+                            platform_match.group(2)
+                            .strip()
+                        )
                     else:
                         title = info.strip()
-                        platforms = "Non specificate"
-
-                    if is_excluded(title):
-                        continue
+                        platforms = (
+                            "Non specificate"
+                        )
 
                     games.append({
                         "title": title,
@@ -484,14 +433,12 @@ def fetch_gamesradar(config, today, end_date):
                         "url": source["url"],
                         "sources": ["GamesRadar"],
                         "note": note or "",
-                        "officially_verified": False,
                     })
 
             sibling = sibling.find_next_sibling()
 
     print(
-        "GamesRadar: ",
-        len(games),
+        f"GamesRadar: {len(games)} "
         "uscite nel periodo"
     )
 
@@ -504,270 +451,206 @@ def merge_games(games):
     for game in games:
         key = (
             normalize(game["title"]),
-            game["date"].isoformat()
+            game["date"].isoformat(),
         )
 
         if key not in merged:
-            merged[key] = game.copy()
+            merged[key] = {
+                **game,
+                "sources": list(
+                    game["sources"]
+                ),
+            }
             continue
 
         existing = merged[key]
 
         for source in game["sources"]:
             if source not in existing["sources"]:
-                existing["sources"].append(source)
+                existing["sources"].append(
+                    source
+                )
 
-        # Mantiene la lista di piattaforme piu' ampia.
         if len(game["platforms"]) > len(
             existing["platforms"]
         ):
-            existing["platforms"] = game["platforms"]
+            existing["platforms"] = (
+                game["platforms"]
+            )
 
-        # Preferisce un collegamento Steam
-        # rispetto alla pagina generale.
-        if "store.steampowered.com" in game["url"]:
+        if (
+            "store.steampowered.com"
+            in game["url"]
+        ):
             existing["url"] = game["url"]
 
-        if game["note"] and not existing["note"]:
-            existing["note"] = game["note"]
+        if (
+            game["note"]
+            and not existing["note"]
+        ):
+            existing["note"] = (
+                game["note"]
+            )
 
     return list(merged.values())
 
 
-def select_games(games, watchlist, max_games):
-    ranked = sorted(
-        games,
-        key=lambda game: (
-            -score_game(game, watchlist),
-            game["date"],
-            game["title"].casefold(),
-        )
-    )
-
-    return sorted(
-        ranked[:max_games],
-        key=lambda game: (
-            game["date"],
-            game["title"].casefold(),
-        )
-    )
-
-
-def build_payload(games, today, end_date):
-    entries = []
+def select_premium(games, premium, limit):
+    selected = []
 
     for game in games:
-        date_text = game["date"].strftime(
-            "%d/%m/%Y"
+        title = game["title"]
+
+        if is_excluded(title, premium):
+            continue
+
+        category = premium_category(
+            title, premium
         )
 
-        sources = " + ".join(
-            game["sources"]
+        if not category:
+            continue
+
+        selected.append({
+            **game,
+            "category": category,
+        })
+
+    selected.sort(
+        key=lambda game: (
+            game["date"],
+            game["title"].casefold(),
         )
-
-        note = (
-            f" · {game['note']}"
-            if game["note"] else ""
-        )
-
-        entries.append(
-            f"🎮 **[{game['title']}]({game['url']})**\n"
-            f"📅 {date_text} · "
-            f"🎯 {game['platforms']}{note}\n"
-            f"🔎 Fonte: {sources}"
-        )
-
-    description = "\n\n".join(entries)
-
-    return {
-        "username": "ARTYKO GAME RELEASES",
-        "allowed_mentions": {
-            "parse": []
-        },
-        "embeds": [
-            {
-                "title": (
-                    "🎮 ARTYKO | "
-                    "USCITE DEI PROSSIMI 7 GIORNI"
-                ),
-                "description": description[:4000],
-                "color": 0x00E5C3,
-                "fields": [
-                    {
-                        "name": "📅 Periodo",
-                        "value": (
-                            f"{today.strftime('%d/%m/%Y')}"
-                            " — "
-                            f"{end_date.strftime('%d/%m/%Y')}"
-                        ),
-                        "inline": False,
-                    }
-                ],
-                "footer": {
-                    "text": (
-                        "Fonti: Steam / GamesRadar"
-                        " · Date da verificare sui siti ufficiali"
-                    )
-                },
-                "timestamp": NOW.isoformat(),
-            }
-        ],
-    }
-
-
-def publish(payload):
-    if not WEBHOOK:
-        raise RuntimeError(
-            "Secret DISCORD_WEBHOOK_RELEASES mancante."
-        )
-
-    url = WEBHOOK + (
-        "&" if "?" in WEBHOOK else "?"
-    ) + "wait=true"
-
-    if COVER.exists():
-        payload["embeds"][0]["image"] = {
-            "url": "attachment://releases_cover.png"
-        }
-
-        with COVER.open("rb") as image:
-            response = session.post(
-                url,
-                data={
-                    "payload_json": json.dumps(
-                        payload
-                    )
-                },
-                files={
-                    "files[0]": (
-                        "releases_cover.png",
-                        image,
-                        "image/png",
-                    )
-                },
-                timeout=30,
-            )
-    else:
-        response = session.post(
-            url, json=payload, timeout=30
-        )
-
-    response.raise_for_status()
-    print(
-        "Calendario pubblicato su Discord."
     )
+
+    return selected[:limit]
 
 
 def main():
-    config, days, max_games = load_config()
+    print("=" * 42)
+    print("ARTYKO GAME RELEASES V4 PREMIUM")
+    print("=" * 42)
 
-    today = TODAY
-    end_date = today + timedelta(
+    print("Ora italiana:", NOW.isoformat())
+
+    # V4 bloccata in simulazione.
+    # Non contiene chiamate al webhook Discord.
+    print("Modalita': SOLO SIMULAZIONE")
+
+    premium = load_json(PREMIUM_FILE)
+    config = load_json(SOURCES_FILE)
+
+    days = int(
+        config.get("days_ahead", 7)
+    )
+    limit = int(
+        config.get("max_games", 10)
+    )
+
+    if not 1 <= days <= 31:
+        raise ValueError(
+            "days_ahead non valido."
+        )
+
+    if not 1 <= limit <= 10:
+        raise ValueError(
+            "max_games deve essere tra 1 e 10."
+        )
+
+    end_date = TODAY + timedelta(
         days=days - 1
     )
 
-    print("====================================")
-    print("ARTYKO GAME RELEASES V3")
-    print("====================================")
-    print("Ora italiana:", NOW.isoformat())
-    print("Periodo:", today, "-", end_date)
-    print("Simulazione:", DRY_RUN)
-
-    watchlist = load_watchlist()
     print(
-        "Titoli prioritari:",
-        len(watchlist)
+        "Periodo:",
+        TODAY,
+        "-",
+        end_date,
     )
 
-    history = load_history()
-
-    if history.get(
-        "last_published"
-    ) == today.isoformat():
-        print(
-            "Calendario gia' pubblicato oggi."
-        )
-        return
-
-    all_games = []
+    games = []
 
     try:
-        all_games.extend(
+        games.extend(
             fetch_gamesradar(
-                config, today, end_date
+                config,
+                TODAY,
+                end_date,
             )
         )
     except (
         requests.RequestException,
-        ValueError
+        ValueError,
     ) as exc:
         print(
-            "ERRORE GamesRadar:", exc
+            "Errore GamesRadar:", exc
         )
 
-    all_games.extend(
-        fetch_steam(today, end_date)
+    games.extend(
+        fetch_steam(
+            TODAY,
+            end_date,
+        )
     )
 
-    merged = merge_games(all_games)
+    merged = merge_games(games)
 
     print(
         "Uscite complessive:",
         len(merged)
     )
 
-    if not merged:
-        print(
-            "Nessuna uscita nei prossimi giorni."
-        )
-        print(
-            "Nessun messaggio inviato."
-        )
-        return
-
-    selected = select_games(
-        merged, watchlist, max_games
+    selected = select_premium(
+        merged,
+        premium,
+        limit,
     )
 
-    print("\nCALENDARIO SELEZIONATO:")
+    print(
+        "Grandi uscite selezionate:",
+        len(selected)
+    )
+
+    print("\nANTEPRIMA CALENDARIO PREMIUM:")
+
+    if not selected:
+        print(
+            "Nessuna grande uscita "
+            "individuata nel periodo."
+        )
 
     for game in selected:
+        print("-" * 42)
         print(
-            game["date"],
-            "|", game["title"],
-            "|", game["platforms"],
-            "|", "+".join(
-                game["sources"]
-            ),
-            "| score:",
-            score_game(game, watchlist),
+            "Titolo:", game["title"]
+        )
+        print(
+            "Data:", game["date"]
+        )
+        print(
+            "Piattaforme:",
+            game["platforms"]
+        )
+        print(
+            "Categoria:",
+            game["category"]
+        )
+        print(
+            "Fonti:",
+            " + ".join(game["sources"])
+        )
+        print(
+            "URL:", game["url"]
+        )
+        print(
+            "Verifica ufficiale:",
+            "NON ESEGUITA"
         )
 
-    payload = build_payload(
-        selected, today, end_date
-    )
-
-    print("\nANTEPRIMA DISCORD:")
+    print("\nSIMULAZIONE COMPLETATA.")
     print(
-        payload["embeds"][0]["description"]
+        "Nessun messaggio inviato su Discord."
     )
-
-    if DRY_RUN:
-        print(
-            "\nSIMULAZIONE COMPLETATA."
-        )
-        print(
-            "Nessun messaggio pubblicato."
-        )
-        return
-
-    publish(payload)
-    history["last_published"] = (
-        today.isoformat()
-    )
-    save_history(history)
-
-    print("Storico aggiornato.")
 
 
 if __name__ == "__main__":
