@@ -9,8 +9,9 @@ import requests
 
 
 # ============================================================
-# ARTYKO | AION 2 EVENTS
+# AION 2 EVENTS | ARTYKO
 # Dashboard Discord: calendario + prossimo evento
+# Stile pulito, fantasy, dedicato ai Daeva
 # ============================================================
 
 UTC = timezone.utc
@@ -27,8 +28,6 @@ DRY_RUN = (
 )
 
 STATE_FILE = "aion2_events_state.json"
-SOURCE_URL = "https://aion2.app/news/51"
-
 CALENDAR_LIMIT = 12
 
 EVENTS = [
@@ -76,16 +75,6 @@ def load_state():
     state.setdefault("sent_reminders", [])
     state.setdefault("old_reminder_message_ids", [])
 
-    if not isinstance(state["sent_reminders"], list):
-        raise ValueError("Elenco promemoria non valido.")
-
-    if not isinstance(
-        state["old_reminder_message_ids"], list
-    ):
-        raise ValueError(
-            "Elenco messaggi da eliminare non valido."
-        )
-
     return state
 
 
@@ -112,10 +101,7 @@ def calculate_events(now):
     local_now = now.astimezone(SERVER_TZ)
 
     for day_offset in range(4):
-        day = (
-            local_now.date()
-            + timedelta(days=day_offset)
-        )
+        day = local_now.date() + timedelta(days=day_offset)
 
         for event_type in EVENTS:
             for minute_of_day in event_type["minutes"]:
@@ -148,13 +134,8 @@ def calculate_events(now):
                     if start_utc <= now:
                         continue
 
-                    timestamp = int(
-                        start_utc.timestamp()
-                    )
-
-                    key = (
-                        f"{event_type['id']}:{timestamp}"
-                    )
+                    timestamp = int(start_utc.timestamp())
+                    key = f"{event_type['id']}:{timestamp}"
 
                     if key in seen:
                         continue
@@ -188,11 +169,10 @@ def build_calendar(events, now):
         timestamp = event["timestamp"]
 
         lines.append(
-            f"**{event['icon']} {event['name']}**\n"
-            f"🕒 <t:{timestamp}:F>\n"
-            f"⏳ <t:{timestamp}:R> · "
-            f"{event['duration']} min · "
-            "⌛ In programma"
+            f"{event['icon']} **{event['name']}**\n"
+            f"<t:{timestamp}:F>  ·  "
+            f"<t:{timestamp}:R>\n"
+            f"Durata: {event['duration']} min"
         )
 
     updated_at = now.astimezone(
@@ -206,17 +186,13 @@ def build_calendar(events, now):
         },
         "embeds": [
             {
-                "title": (
-                    "📅 ARTYKO | "
-                    "CALENDARIO EVENTI AION 2"
-                ),
+                "title": "📅 CALENDARIO EVENTI",
                 "description": "\n\n".join(lines),
                 "color": 0x00D8B4,
                 "footer": {
                     "text": (
-                        "Server EU · "
-                        "Orario locale Discord · "
-                        "Fonte calendario: AION2.APP · "
+                        "AION 2 · Server EU · "
+                        "Fonte: AION2.APP · "
                         f"Aggiornato alle {updated_at}"
                     )
                 },
@@ -246,36 +222,34 @@ def build_next_event(events, now):
         int((next_start - now).total_seconds())
     )
 
-    minutes_left = (
-        seconds_left + 59
-    ) // 60
+    minutes_left = (seconds_left + 59) // 60
 
     if minutes_left <= 5:
-        status = "🚨 **EVENTO IMMINENTE!**"
+        status = "Evento imminente"
         color = 0x32FF87
     elif minutes_left <= 20:
-        status = "🔔 **PREPARATI, ARTYKO!**"
+        status = "In arrivo"
         color = 0x00D8B4
     else:
-        status = "📡 **PROSSIMO EVENTO**"
+        status = "Prossimamente"
         color = 0x00B8FF
 
     event_lines = []
 
     for event in simultaneous:
         event_lines.append(
-            f"**{event['icon']} {event['name']}**\n"
-            f"⌛ Durata: {event['duration']} minuti"
+            f"{event['icon']} **{event['name']}**\n"
+            f"Durata: {event['duration']} minuti"
         )
 
     description = (
-        f"{status}\n\n"
+        f"*{status}*\n\n"
         + "\n\n".join(event_lines)
         + "\n\n"
-        + f"🕒 Inizio: <t:{timestamp}:F>\n"
-        + f"⏳ Countdown: <t:{timestamp}:R>\n"
-        + "🌍 Server: EU\n\n"
-        + "⚔️ **Preparati, ARTYKO!**"
+        + f"**Inizio:** <t:{timestamp}:F>\n"
+        + f"**Countdown:** <t:{timestamp}:R>\n"
+        + "Server: EU\n\n"
+        + "🪽 *Preparati, Daeva!*"
     )
 
     return {
@@ -285,15 +259,12 @@ def build_next_event(events, now):
         },
         "embeds": [
             {
-                "title": (
-                    "🔔 ARTYKO | PROSSIMO EVENTO"
-                ),
+                "title": "🔔 PROSSIMO EVENTO",
                 "description": description,
                 "color": color,
                 "footer": {
                     "text": (
-                        "ARTYKO | AION 2 EVENTS · "
-                        "Aggiornamento automatico"
+                        "AION 2 · Aggiornamento automatico"
                     )
                 },
             }
@@ -323,9 +294,7 @@ def publish_or_update(payload, message_id, label):
     webhook = WEBHOOK_URL.rstrip("/")
 
     if message_id:
-        edit_url = (
-            f"{webhook}/messages/{message_id}"
-        )
+        edit_url = f"{webhook}/messages/{message_id}"
 
         response = requests.patch(
             edit_url,
@@ -349,11 +318,9 @@ def publish_or_update(payload, message_id, label):
             "Ne pubblico uno nuovo."
         )
 
-    create_url = webhook + "?wait=true"
-
     response = discord_request(
         "POST",
-        create_url,
+        webhook + "?wait=true",
         payload,
     )
 
@@ -372,15 +339,6 @@ def publish_or_update(payload, message_id, label):
 
 
 def cleanup_known_old_reminders(state):
-    """
-    Elimina solo gli eventuali messaggi
-    esplicitamente registrati nello storico.
-
-    I promemoria della versione precedente
-    non salvavano i loro ID, quindi non possono
-    essere individuati automaticamente.
-    """
-
     message_ids = list(
         state["old_reminder_message_ids"]
     )
@@ -395,9 +353,7 @@ def cleanup_known_old_reminders(state):
     webhook = WEBHOOK_URL.rstrip("/")
 
     for message_id in message_ids:
-        url = (
-            f"{webhook}/messages/{message_id}"
-        )
+        url = f"{webhook}/messages/{message_id}"
 
         response = requests.delete(
             url,
@@ -458,23 +414,14 @@ def main():
             f"{event['duration']} min"
         )
 
-    calendar_payload = build_calendar(
-        events, now
-    )
-
+    calendar_payload = build_calendar(events, now)
     next_event_payload = build_next_event(
         events, now
     )
 
-    print(
-        "\nDashboard preparata:"
-    )
-    print(
-        "1. 📅 Calendario eventi"
-    )
-    print(
-        "2. 🔔 Prossimo evento"
-    )
+    print("\nDashboard preparata:")
+    print("1. Calendario eventi")
+    print("2. Prossimo evento")
 
     if DRY_RUN:
         print(
@@ -512,12 +459,8 @@ def main():
 
     cleanup_known_old_reminders(state)
 
-    print(
-        "\nDashboard aggiornata correttamente."
-    )
-    print(
-        "Nessun nuovo promemoria separato inviato."
-    )
+    print("\nDashboard aggiornata correttamente.")
+    print("Nessun nuovo promemoria separato inviato.")
     print("Esecuzione completata.")
 
 
