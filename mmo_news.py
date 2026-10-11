@@ -3,8 +3,8 @@ import os
 import re
 import json
 import time
-import hashlib
 import html
+import hashlib
 from pathlib import Path
 from datetime import datetime, timezone
 from urllib.parse import urlsplit, urlunsplit
@@ -13,7 +13,7 @@ import requests
 import feedparser
 
 # =====================================
-# ARTYKO MMO NEWS
+# ARTYKO MMO NEWS - VERSIONE 2
 # =====================================
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -31,21 +31,53 @@ FEEDS = {
 }
 
 MAX_PER_RUN = 3
-MAX_FEED_ITEMS = 30
+MAX_FEED_ITEMS = 50
 
-EXCLUDED_WORDS = (
-    "review",
-    "recensione",
-    "buyer's guide",
-    "shopping guide",
-    "best deals",
-    "coupon",
+# MMORPG e giochi online persistenti prioritari.
+MMO_KEYWORDS = (
+    "mmorpg", "mmo",
+    "world of warcraft", "wow classic",
+    "warcraft", "aion",
+    "final fantasy xiv", "ffxiv",
+    "guild wars", "elder scrolls online",
+    "black desert", "runescape",
+    "old school runescape",
+    "ashes of creation",
+    "chrono odyssey",
+    "archeage", "throne and liberty",
+    "lost ark", "new world",
+    "eve online", "albion online",
+    "blade and soul", "blade & soul",
+    "maplestory", "lineage",
+    "blue protocol", "pax dei",
+    "star citizen", "pantheon",
+    "everquest", "dune awakening",
+    "dune: awakening",
+    "once human", "soulframe",
+    "the quinfall", "corepunk",
+    "project gorgon", "tower of fantasy",
+    "the first descendant",
+    "destiny 2", "warframe",
+    "fractured online",
+)
+
+# Esclusioni esplicite per ridurre il rumore.
+EXCLUDED_KEYWORDS = (
+    "sea of thieves",
+    "fortnite", "valorant",
+    "counter-strike", "call of duty",
+    "apex legends", "overwatch",
+    "league of legends",
+    "marvel rivals",
+    "review", "recensione",
+    "buyer's guide", "shopping guide",
+    "best deals", "coupon",
     "discount code",
 )
 
 session = requests.Session()
 session.headers.update({
-    "User-Agent": "Mozilla/5.0 ARTYKO-MMO-News/1.0"
+    "User-Agent": "ARTYKO-MMO-News/2.0"
 })
 
 
@@ -57,7 +89,6 @@ def clean_text(value):
 
 def article_key(url):
     parts = urlsplit(url.strip())
-
     normalized = urlunsplit((
         parts.scheme.lower(),
         parts.netloc.lower(),
@@ -65,7 +96,6 @@ def article_key(url):
         "",
         ""
     ))
-
     return hashlib.sha256(
         normalized.encode("utf-8")
     ).hexdigest()
@@ -75,11 +105,9 @@ def load_seen():
     if not STATE_FILE.exists():
         return set()
 
-    data = json.loads(
+    return set(json.loads(
         STATE_FILE.read_text(encoding="utf-8")
-    )
-
-    return set(data)
+    ))
 
 
 def save_seen(seen):
@@ -93,15 +121,34 @@ def save_seen(seen):
     )
 
 
+def is_relevant(article):
+    text = (
+        article["title"] + " "
+        + article["description"]
+    ).lower()
+
+    if any(
+        keyword in text
+        for keyword in EXCLUDED_KEYWORDS
+    ):
+        return False
+
+    return any(
+        keyword in text
+        for keyword in MMO_KEYWORDS
+    )
+
+
 def fetch_articles():
-    articles = []
+    by_source = {}
     successful_feeds = 0
 
     for source, feed_url in FEEDS.items():
+        by_source[source] = []
+
         try:
             response = session.get(
-                feed_url,
-                timeout=25
+                feed_url, timeout=25
             )
             response.raise_for_status()
 
@@ -109,14 +156,14 @@ def fetch_articles():
 
             if not feed.entries:
                 raise ValueError(
-                    "Nessun articolo trovato nel feed"
+                    "Feed senza articoli"
                 )
 
             successful_feeds += 1
 
             print(
                 f"{source}: "
-                f"{len(feed.entries)} articoli ricevuti",
+                f"{len(feed.entries)} articoli",
                 flush=True
             )
 
@@ -124,9 +171,7 @@ def fetch_articles():
                 title = clean_text(
                     entry.get("title", "")
                 )
-
                 url = entry.get("link", "").strip()
-
                 description = clean_text(
                     entry.get("summary", "")
                 )
@@ -136,51 +181,64 @@ def fetch_articles():
                 ):
                     continue
 
-                lower_title = title.lower()
-
-                if any(
-                    word in lower_title
-                    for word in EXCLUDED_WORDS
-                ):
-                    continue
-
-                articles.append({
+                article = {
                     "id": article_key(url),
                     "title": title,
                     "url": url,
                     "description": description[:350],
                     "source": source
-                })
+                }
+
+                if is_relevant(article):
+                    by_source[source].append(article)
+
+            print(
+                f"{source}: "
+                f"{len(by_source[source])} "
+                "notizie pertinenti",
+                flush=True
+            )
 
         except Exception as error:
             print(
-                f"ERRORE FONTE {source}: {error}",
+                f"ERRORE {source}: {error}",
                 flush=True
             )
 
     if successful_feeds == 0:
         raise RuntimeError(
-            "Nessun feed MMO funzionante. "
-            "Controllare gli URL delle fonti."
+            "Nessuna fonte MMO disponibile"
         )
 
-    unique_articles = []
-    known_ids = set()
+    # Alterna le fonti per dare spazio a entrambe.
+    combined = []
+    max_length = max(
+        (len(items) for items in by_source.values()),
+        default=0
+    )
 
-    for article in articles:
-        if article["id"] in known_ids:
+    for index in range(max_length):
+        for source in FEEDS:
+            items = by_source[source]
+            if index < len(items):
+                combined.append(items[index])
+
+    unique = []
+    known = set()
+
+    for article in combined:
+        if article["id"] in known:
             continue
-
-        known_ids.add(article["id"])
-        unique_articles.append(article)
+        known.add(article["id"])
+        unique.append(article)
 
     print(
-        f"Totale notizie selezionate: "
-        f"{len(unique_articles)}",
+        "Notizie MMO selezionate:",
+        len(unique),
         flush=True
     )
 
-    return unique_articles
+    return unique
 
 
 def publish_article(article):
@@ -239,13 +297,12 @@ def publish_article(article):
 
 def main():
     print(
-        "=== ARTYKO MMO NEWS ===",
+        "=== ARTYKO MMO NEWS V2 ===",
         flush=True
     )
 
     print(
-        "Modalita simulazione:",
-        DRY_RUN,
+        "Simulazione:", DRY_RUN,
         flush=True
     )
 
@@ -257,18 +314,11 @@ def main():
         if article["id"] not in seen
     ]
 
-    # Primo avvio: solo tre articoli.
     selected = new_articles[:MAX_PER_RUN]
 
     print(
-        f"Nuove notizie trovate: "
-        f"{len(new_articles)}",
-        flush=True
-    )
-
-    print(
-        f"Notizie selezionate: "
-        f"{len(selected)}",
+        "Nuove notizie:",
+        len(new_articles),
         flush=True
     )
 
@@ -285,27 +335,27 @@ def main():
 
     if DRY_RUN:
         print(
-            "TEST COMPLETATO: "
-            "nessun messaggio inviato a Discord.",
+            "SIMULAZIONE COMPLETATA. "
+            "Nessun messaggio pubblicato.",
             flush=True
         )
         return
 
     for article in selected:
         publish_article(article)
-
         seen.add(article["id"])
         save_seen(seen)
 
         print(
-            f"PUBBLICATO: {article['title']}",
+            "PUBBLICATO:",
+            article["title"],
             flush=True
         )
 
         time.sleep(2)
 
     print(
-        "ARTYKO MMO NEWS: esecuzione completata.",
+        "ARTYKO MMO NEWS completato.",
         flush=True
     )
 
