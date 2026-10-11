@@ -7,13 +7,14 @@ import html
 import hashlib
 from pathlib import Path
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
 import feedparser
 
 # =====================================
-# ARTYKO MMO NEWS - VERSIONE 3
+# ARTYKO MMO NEWS - VERSIONE 4
 # =====================================
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -30,7 +31,9 @@ FEEDS = {
     "Massively Overpowered": "https://massivelyop.com/feed/",
 }
 
-MAX_PER_RUN = 3
+MAX_PER_RUN = 2
+DAILY_LIMIT = 2
+ITALY_TZ = ZoneInfo("Europe/Rome")
 MAX_FEED_ITEMS = 50
 
 # Giochi MMORPG e mondi online persistenti.
@@ -117,7 +120,7 @@ ANNOUNCEMENT_TERMS = (
 
 session = requests.Session()
 session.headers.update({
-    "User-Agent": "ARTYKO-MMO-News/3.0"
+    "User-Agent": "ARTYKO-MMO-News/4.0"
 })
 
 
@@ -143,26 +146,38 @@ def article_key(url):
     ).hexdigest()
 
 
-def load_seen():
+def italy_today():
+    return datetime.now(ITALY_TZ).date().isoformat()
+
+
+def load_state():
     if not STATE_FILE.exists():
-        return set()
+        return {"seen": [], "daily_counts": {}}
 
-    data = json.loads(
-        STATE_FILE.read_text(encoding="utf-8")
-    )
+    data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
 
-    return set(data)
+    # Compatibilita' con lo storico della V3 (lista di ID).
+    if isinstance(data, list):
+        return {"seen": data, "daily_counts": {}}
+
+    if isinstance(data, dict):
+        seen = data.get("seen", [])
+        counts = data.get("daily_counts", {})
+        if not isinstance(seen, list) or not isinstance(counts, dict):
+            raise ValueError("Storico MMO non valido")
+        return {"seen": seen, "daily_counts": counts}
+
+    raise ValueError("Formato storico MMO non valido")
 
 
-def save_seen(seen):
-    STATE_FILE.write_text(
-        json.dumps(
-            sorted(seen),
-            indent=2,
-            ensure_ascii=False
-        ),
+def save_state(state):
+    # Scrittura atomica per evitare file JSON parziali.
+    temporary = STATE_FILE.with_suffix(".json.tmp")
+    temporary.write_text(
+        json.dumps(state, indent=2, ensure_ascii=False),
         encoding="utf-8"
     )
+    temporary.replace(STATE_FILE)
 
 
 def contains_keyword(text, keyword):
@@ -394,78 +409,78 @@ def publish_article(article):
 
 
 def main():
-    print(
-        "=== ARTYKO MMO NEWS V3 ===",
-        flush=True
-    )
+    print("=== ARTYKO MMO NEWS V4 ===", flush=True)
+    print("Simulazione:", DRY_RUN, flush=True)
 
-    print(
-        "Simulazione:",
-        DRY_RUN,
-        flush=True
-    )
+    state = load_state()
+    seen = set(state["seen"])
+    daily_counts = state["daily_counts"]
+
+    today = italy_today()
+    published_today = int(daily_counts.get(today, 0))
+    remaining = max(0, DAILY_LIMIT - published_today)
+
+    print("Data italiana:", today, flush=True)
+    print("Pubblicate oggi (V4):", published_today, flush=True)
+    print("Limite giornaliero:", DAILY_LIMIT, flush=True)
+    print("Post disponibili:", remaining, flush=True)
+
+    if remaining == 0:
+        print("Limite giornaliero raggiunto.", flush=True)
+        return
 
     articles = fetch_articles()
-    seen = load_seen()
-
     new_articles = [
-        article
-        for article in articles
+        article for article in articles
         if article["id"] not in seen
     ]
+    selected = new_articles[:min(MAX_PER_RUN, remaining)]
 
-    selected = new_articles[:MAX_PER_RUN]
-
-    print(
-        "Nuove notizie:",
-        len(new_articles),
-        flush=True
-    )
-
-    print(
-        "Notizie pronte:",
-        len(selected),
-        flush=True
-    )
+    print("Nuove notizie:", len(new_articles), flush=True)
+    print("Notizie pronte:", len(selected), flush=True)
 
     for article in selected:
-        print(
-            f"[{article['source']}] "
-            f"{article['title']}",
-            flush=True
-        )
-
-        print(
-            article["url"],
-            flush=True
-        )
+        print(f"[{article['source']}] {article['title']}", flush=True)
+        print(article["url"], flush=True)
 
     if DRY_RUN:
         print(
-            "SIMULAZIONE COMPLETATA. "
-            "Nessun messaggio pubblicato.",
+            "SIMULAZIONE COMPLETATA. Nessun messaggio pubblicato.",
             flush=True
         )
         return
 
     for article in selected:
-        publish_article(article)
+        # Ricontrolla la data per evitare di superare il limite
+        # se l'esecuzione attraversa la mezzanotte italiana.
+        publish_date = italy_today()
+        if int(daily_counts.get(publish_date, 0)) >= DAILY_LIMIT:
+            print("Limite del giorno raggiunto.", flush=True)
+            break
 
+        publish_article(article)
         seen.add(article["id"])
-        save_seen(seen)
+        daily_counts[publish_date] = int(
+            daily_counts.get(publish_date, 0)
+        ) + 1
+
+        # Conserva i contatori degli ultimi 30 giorni registrati.
+        daily_counts = {
+            day: daily_counts[day]
+            for day in sorted(daily_counts)[-30:]
+        }
+        state["seen"] = sorted(seen)
+        state["daily_counts"] = daily_counts
+        save_state(state)
 
         print(
-            "PUBBLICATO:",
-            article["title"],
+            "PUBBLICATO:", article["title"],
+            "| Totale del giorno:", daily_counts[publish_date],
             flush=True
         )
-
         time.sleep(2)
 
-    print(
-        "ARTYKO MMO NEWS completato.",
-        flush=True
-    )
+    print("ARTYKO MMO NEWS completato.", flush=True)
 
 
 if __name__ == "__main__":
