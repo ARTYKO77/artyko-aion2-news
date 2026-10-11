@@ -13,6 +13,7 @@ APP_ID = 3932890
 API_URL = "https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/"
 
 STATE = Path("tarkov_seen_articles.json")
+COVER = Path(__file__).resolve().parent / "tarkov_cover.png"
 
 WEBHOOK = os.getenv("DISCORD_WEBHOOK_TARKOV", "")
 DRY_RUN = os.getenv("TARKOV_DRY_RUN", "true").lower() != "false"
@@ -102,11 +103,39 @@ def send_discord(article):
     if article["url"].startswith("https://"):
         embed["url"] = article["url"]
 
-    response = session.post(
-        WEBHOOK,
-        json={"embeds": [embed]},
-        timeout=20
-    )
+    if COVER.is_file():
+        embed["image"] = {
+            "url": "attachment://tarkov_cover.png"
+        }
+
+        with COVER.open("rb") as image:
+            response = session.post(
+                WEBHOOK,
+                data={
+                    "payload_json": json.dumps({
+                        "embeds": [embed]
+                    })
+                },
+                files={
+                    "files[0]": (
+                        "tarkov_cover.png",
+                        image,
+                        "image/png"
+                    )
+                },
+                timeout=30
+            )
+    else:
+        print(
+            "ATTENZIONE: copertina non trovata!",
+            flush=True
+        )
+
+        response = session.post(
+            WEBHOOK,
+            json={"embeds": [embed]},
+            timeout=20
+        )
 
     response.raise_for_status()
 
