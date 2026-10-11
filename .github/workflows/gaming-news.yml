@@ -3,9 +3,19 @@ name: ARTYKO Gaming News
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Pubblicare le notizie su Discord?"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: artyko-gaming-news
+  cancel-in-progress: false
 
 jobs:
   gaming-news:
@@ -24,7 +34,24 @@ jobs:
       - name: Installa librerie
         run: pip install requests
 
-      - name: Test fonti Gaming News
+      - name: Controlla notizie Gaming
         env:
-          GAMING_DRY_RUN: 'true'
+          DISCORD_WEBHOOK_GAMING: ${{ secrets.DISCORD_WEBHOOK_GAMING }}
+          GAMING_DRY_RUN: ${{ inputs.publish == true && 'false' || 'true' }}
         run: python -u gaming_news.py
+
+      - name: Salva storico notizie
+        if: ${{ inputs.publish == true }}
+        run: |
+          if [ -f gaming_seen_articles.json ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add gaming_seen_articles.json
+
+            if ! git diff --cached --quiet; then
+              git commit -m "Update Gaming news history"
+              git push
+            else
+              echo "Nessuna nuova notizia da salvare."
+            fi
+          fi
