@@ -37,7 +37,7 @@ jobs:
           python-version: '3.11'
 
       - name: Installa librerie
-        run: pip install requests feedparser
+        run: pip install requests feedparser beautifulsoup4
 
       - name: Controlla notizie MMO
         env:
