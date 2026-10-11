@@ -1,4 +1,6 @@
 
+
+
 import json
 import os
 import re
@@ -11,7 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 
 # ============================================
-# ARTYKO GAME RELEASES V5 - PREMIUM
+# ARTYKO GAME RELEASES V5.2 - PREMIUM
 # Pubblicazione protetta da RELEASES_DRY_RUN
 # ============================================
 
@@ -581,6 +583,9 @@ def send_discord(games):
              "color": 0x23B7B1,
              "footer": {"text": "Solo uscite approvate • Orario italiano"}}
     payload = {"username": "ARTYKO GAME RELEASES", "embeds": [embed]}
+    # wait=true richiede a Discord di restituire il messaggio creato.
+    # Non ripetere automaticamente POST in caso di timeout: l'invio potrebbe essere riuscito.
+    webhook = webhook + ("&" if "?" in webhook else "?") + "wait=true"
     if COVER_FILE.is_file():
         embed["image"] = {"url": "attachment://releases_cover.png"}
         with COVER_FILE.open("rb") as cover:
@@ -591,11 +596,25 @@ def send_discord(games):
     else:
         response = SESSION.post(webhook, json=payload, timeout=30)
     response.raise_for_status()
+    try:
+        message = response.json()
+    except ValueError as exc:
+        raise RuntimeError(
+            "Discord ha risposto senza un ID messaggio valido. "
+            "Controllare il canale prima di un nuovo tentativo."
+        ) from exc
+    message_id = str(message.get("id", ""))
+    if not message_id.isdigit():
+        raise RuntimeError(
+            "ID messaggio Discord non ricevuto. "
+            "Controllare il canale prima di un nuovo tentativo."
+        )
+    return message_id
 
 
 def main():
     print("=" * 42)
-    print("ARTYKO GAME RELEASES V5 PREMIUM")
+    print("ARTYKO GAME RELEASES V5.2 PREMIUM")
     print("=" * 42)
     now = datetime.now(TZ)
     today = now.date()
@@ -657,7 +676,15 @@ def main():
         print("SIMULAZIONE COMPLETATA: nessun messaggio Discord, storico invariato")
         return
 
-    send_discord(fresh)
+    try:
+        message_id = send_discord(fresh)
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            "Invio Discord fallito o incerto. NON ripetere publish=true "
+            "prima di controllare manualmente il canale Discord."
+        ) from exc
+    print("Discord ha confermato il messaggio ID:", message_id)
+    seen["last_discord_message_id"] = message_id
     seen["last_published_date"] = today.isoformat()
     seen["published_games"] = sorted(previous | {game_key(game) for game in fresh})
     SEEN_FILE.write_text(json.dumps(seen, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
