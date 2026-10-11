@@ -3,9 +3,19 @@ name: ARTYKO Wardogs News
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Pubblicare le nuove notizie su Discord?"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: artyko-wardogs-news
+  cancel-in-progress: false
 
 jobs:
   wardogs-news:
@@ -24,7 +34,24 @@ jobs:
       - name: Installa librerie
         run: pip install requests
 
-      - name: Test notizie WARDOGS
+      - name: Controlla notizie WARDOGS
         env:
-          WARDOGS_DRY_RUN: 'true'
+          DISCORD_WEBHOOK_WARDOGS: ${{ secrets.DISCORD_WEBHOOK_WARDOGS }}
+          WARDOGS_DRY_RUN: ${{ inputs.publish == true && 'false' || 'true' }}
         run: python -u wardogs_news.py
+
+      - name: Salva storico notizie
+        if: ${{ inputs.publish == true }}
+        run: |
+          if [ -f wardogs_seen_articles.json ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add wardogs_seen_articles.json
+
+            if ! git diff --cached --quiet; then
+              git commit -m "Update WARDOGS news history"
+              git push
+            else
+              echo "Nessuna nuova notizia da salvare."
+            fi
+          fi
