@@ -10,6 +10,12 @@ on:
         type: boolean
         default: false
 
+      test_cover:
+        description: "Inviare un solo messaggio di prova con la copertina?"
+        required: true
+        type: boolean
+        default: false
+
   schedule:
     - cron: '13 */2 * * *'
 
@@ -43,10 +49,11 @@ jobs:
         env:
           DISCORD_WEBHOOK_TARKOV: ${{ secrets.DISCORD_WEBHOOK_TARKOV }}
           TARKOV_DRY_RUN: ${{ (github.event_name == 'schedule' || inputs.publish == true) && 'false' || 'true' }}
+          TARKOV_TEST_COVER: ${{ github.event_name == 'workflow_dispatch' && inputs.test_cover == true && 'true' || 'false' }}
         run: python -u tarkov_news.py
 
       - name: Salva storico notizie
-        if: ${{ github.event_name == 'schedule' || inputs.publish == true }}
+        if: ${{ github.event_name == 'schedule' || (inputs.publish == true && inputs.test_cover != true) }}
         run: |
           if [ -f tarkov_seen_articles.json ]; then
             git config user.name "github-actions[bot]"
