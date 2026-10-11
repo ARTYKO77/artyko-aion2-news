@@ -628,6 +628,19 @@ def main():
     confirmed = verified_candidates(selected, verified)
     previous = set(seen.get("published_games", []))
     fresh = [game for game in confirmed if game_key(game) not in previous]
+    print("\n=== CANDIDATI PREMIUM DA VERIFICARE ===")
+    if not selected:
+        print("Nessun candidato PREMIUM trovato.")
+    for index, game in enumerate(selected, start=1):
+        print(f"Candidato {index}:")
+        print("  Titolo:", game["title"])
+        print("  Data:", game["date"].isoformat())
+        print("  Piattaforme:", game["platforms"])
+        print("  Categoria:", game["category"])
+        print("  Fonti:", ", ".join(game["sources"]))
+        print("  URL:", game["url"])
+        print("  Verifica ufficiale: DA ESEGUIRE")
+    print("=== FINE CANDIDATI ===\n")
     print("Premium individuati:", len(selected))
     print("Corrispondenze con registro verificato:", len(confirmed))
     print("Nuove uscite approvate:", len(fresh))
