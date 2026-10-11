@@ -10,6 +10,9 @@ on:
         type: boolean
         default: false
 
+  schedule:
+    - cron: '3,23,43 * * * *'
+
 permissions:
   contents: write
 
@@ -37,11 +40,11 @@ jobs:
       - name: Controlla notizie Gaming
         env:
           DISCORD_WEBHOOK_GAMING: ${{ secrets.DISCORD_WEBHOOK_GAMING }}
-          GAMING_DRY_RUN: ${{ inputs.publish == true && 'false' || 'true' }}
+          GAMING_DRY_RUN: ${{ (github.event_name == 'schedule' || inputs.publish == true) && 'false' || 'true' }}
         run: python -u gaming_news.py
 
       - name: Salva storico notizie
-        if: ${{ inputs.publish == true }}
+        if: ${{ github.event_name == 'schedule' || inputs.publish == true }}
         run: |
           if [ -f gaming_seen_articles.json ]; then
             git config user.name "github-actions[bot]"
