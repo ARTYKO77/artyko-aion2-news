@@ -9,9 +9,9 @@ import requests
 
 
 # ============================================================
-# AION 2 EVENTS | ARTYKO
-# Dashboard Discord: calendario + prossimo evento
-# Stile pulito, fantasy, dedicato ai Daeva
+# ARTYKO | AION 2 EVENTS
+# Calendario: 7 eventi
+# Pannello: 2 prossimi eventi
 # ============================================================
 
 UTC = timezone.utc
@@ -28,7 +28,9 @@ DRY_RUN = (
 )
 
 STATE_FILE = "aion2_events_state.json"
+
 CALENDAR_LIMIT = 7
+NEXT_EVENTS_LIMIT = 2
 
 EVENTS = [
     {
@@ -101,7 +103,9 @@ def calculate_events(now):
     local_now = now.astimezone(SERVER_TZ)
 
     for day_offset in range(4):
-        day = local_now.date() + timedelta(days=day_offset)
+        day = local_now.date() + timedelta(
+            days=day_offset
+        )
 
         for event_type in EVENTS:
             for minute_of_day in event_type["minutes"]:
@@ -120,6 +124,7 @@ def calculate_events(now):
                     )
 
                     start_utc = local_start.astimezone(UTC)
+
                     roundtrip = start_utc.astimezone(
                         SERVER_TZ
                     )
@@ -134,8 +139,13 @@ def calculate_events(now):
                     if start_utc <= now:
                         continue
 
-                    timestamp = int(start_utc.timestamp())
-                    key = f"{event_type['id']}:{timestamp}"
+                    timestamp = int(
+                        start_utc.timestamp()
+                    )
+
+                    key = (
+                        f"{event_type['id']}:{timestamp}"
+                    )
 
                     if key in seen:
                         continue
@@ -207,19 +217,38 @@ def build_next_event(events, now):
             "Nessun evento futuro disponibile."
         )
 
-    next_start = events[0]["start"]
+    # Mostra i prossimi 2 eventi.
+    # Se altri eventi iniziano nello stesso momento
+    # del secondo, mostra anche quelli.
 
-    simultaneous = [
+    selected = events[:NEXT_EVENTS_LIMIT]
+    cutoff = selected[-1]["start"]
+
+    selected = [
         event
         for event in events
-        if event["start"] == next_start
+        if event["start"] <= cutoff
     ]
 
-    timestamp = simultaneous[0]["timestamp"]
+    lines = []
+
+    for event in selected:
+        timestamp = event["timestamp"]
+
+        lines.append(
+            f"{event['icon']} **{event['name']}**\n"
+            f"Inizio: <t:{timestamp}:F>\n"
+            f"Countdown: <t:{timestamp}:R>\n"
+            f"Durata: {event['duration']} minuti"
+        )
 
     seconds_left = max(
         0,
-        int((next_start - now).total_seconds())
+        int(
+            (
+                events[0]["start"] - now
+            ).total_seconds()
+        )
     )
 
     minutes_left = (seconds_left + 59) // 60
@@ -234,21 +263,10 @@ def build_next_event(events, now):
         status = "Prossimamente"
         color = 0x00B8FF
 
-    event_lines = []
-
-    for event in simultaneous:
-        event_lines.append(
-            f"{event['icon']} **{event['name']}**\n"
-            f"Durata: {event['duration']} minuti"
-        )
-
     description = (
         f"*{status}*\n\n"
-        + "\n\n".join(event_lines)
-        + "\n\n"
-        + f"**Inizio:** <t:{timestamp}:F>\n"
-        + f"**Countdown:** <t:{timestamp}:R>\n"
-        + "Server: EU\n\n"
+        + "\n\n".join(lines)
+        + "\n\nServer: EU\n\n"
         + "🪽 *Preparati, Daeva!*"
     )
 
@@ -259,7 +277,7 @@ def build_next_event(events, now):
         },
         "embeds": [
             {
-                "title": "🔔 PROSSIMO EVENTO",
+                "title": "🔔 PROSSIMI EVENTI",
                 "description": description,
                 "color": color,
                 "footer": {
@@ -294,7 +312,9 @@ def publish_or_update(payload, message_id, label):
     webhook = WEBHOOK_URL.rstrip("/")
 
     if message_id:
-        edit_url = f"{webhook}/messages/{message_id}"
+        edit_url = (
+            f"{webhook}/messages/{message_id}"
+        )
 
         response = requests.patch(
             edit_url,
@@ -353,7 +373,9 @@ def cleanup_known_old_reminders(state):
     webhook = WEBHOOK_URL.rstrip("/")
 
     for message_id in message_ids:
-        url = f"{webhook}/messages/{message_id}"
+        url = (
+            f"{webhook}/messages/{message_id}"
+        )
 
         response = requests.delete(
             url,
@@ -361,10 +383,12 @@ def cleanup_known_old_reminders(state):
         )
 
         if response.status_code in (200, 204, 404):
-            state["old_reminder_message_ids"].remove(
-                message_id
-            )
+            state[
+                "old_reminder_message_ids"
+            ].remove(message_id)
+
             save_state(state)
+
             print(
                 "Vecchio promemoria eliminato: "
                 f"{message_id}"
@@ -414,14 +438,17 @@ def main():
             f"{event['duration']} min"
         )
 
-    calendar_payload = build_calendar(events, now)
+    calendar_payload = build_calendar(
+        events, now
+    )
+
     next_event_payload = build_next_event(
         events, now
     )
 
     print("\nDashboard preparata:")
     print("1. Calendario eventi")
-    print("2. Prossimo evento")
+    print("2. Prossimi eventi (2 o più se simultanei)")
 
     if DRY_RUN:
         print(
@@ -450,7 +477,7 @@ def main():
     next_event_id = publish_or_update(
         next_event_payload,
         state["next_event_message_id"],
-        "Pannello prossimo evento",
+        "Pannello prossimi eventi",
     )
 
     if next_event_id != state["next_event_message_id"]:
