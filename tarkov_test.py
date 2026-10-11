@@ -1,18 +1,18 @@
 
 import requests
-import json
+from datetime import datetime, timezone
 
 APP_ID = 3932890
 
 URL = "https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/"
 
-print("ARTYKO TARKOV NEWS - TEST STEAM", flush=True)
+print("ARTYKO TARKOV NEWS - TEST FONTI STEAM", flush=True)
 
 response = requests.get(
     URL,
     params={
         "appid": APP_ID,
-        "count": 5,
+        "count": 20,
         "maxlength": 500,
         "format": "json"
     },
@@ -30,13 +30,31 @@ articles = data.get("appnews", {}).get("newsitems", [])
 
 print("NOTIZIE TROVATE:", len(articles), flush=True)
 
-for article in articles:
-    print("\n-------------------")
+for index, article in enumerate(articles, 1):
+    print("\n" + "=" * 55)
+    print("NOTIZIA:", index)
+
     print("TITOLO:", article.get("title"))
-    print("DATA:", article.get("date"))
     print("FONTE:", article.get("feedlabel"))
+    print("FEED TYPE:", article.get("feed_type"))
+    print("APP ID:", article.get("appid"))
+    print("AUTORE:", article.get("author"))
+
+    timestamp = article.get("date")
+
+    if timestamp:
+        date = datetime.fromtimestamp(
+            timestamp,
+            tz=timezone.utc
+        )
+        print("DATA UTC:", date.isoformat())
+
     print("URL:", article.get("url"))
+    print("GID:", article.get("gid"))
     print("CONTENUTO:", article.get("contents", "")[:300])
 
+print("\n" + "=" * 55)
+print("TEST COMPLETATO", flush=True)
+
 if not articles:
-    print("ATTENZIONE: Steam non ha restituito notizie.")
+    print("ATTENZIONE: nessuna notizia restituita.")
