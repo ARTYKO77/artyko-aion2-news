@@ -1,0 +1,37 @@
+
+name: ARTYKO Sea of Thieves - Test Discord
+
+on:
+  workflow_dispatch:
+    inputs:
+      send_test:
+        description: "Inviare un messaggio di prova su Discord?"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  test-discord:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Scarica repository
+        uses: actions/checkout@v4
+
+      - name: Configura Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installa librerie
+        run: pip install requests
+
+      - name: Verifica webhook e copertina
+        env:
+          DISCORD_WEBHOOK_SEAOFTHIEVES: ${{ secrets.DISCORD_WEBHOOK_SEAOFTHIEVES }}
+          SEAOFTHIEVES_SEND_TEST: ${{ inputs.send_test && 'true' || 'false' }}
+        run: python -u seaofthieves_discord_test.py
