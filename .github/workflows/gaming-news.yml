@@ -11,7 +11,7 @@ on:
         default: false
 
   schedule:
-    - cron: '3,23,43 * * * *'
+    - cron: '3 */4 * * *'
 
 permissions:
   contents: write
@@ -28,6 +28,8 @@ jobs:
     steps:
       - name: Scarica repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - name: Configura Python
         uses: actions/setup-python@v5
@@ -49,11 +51,13 @@ jobs:
           if [ -f gaming_seen_articles.json ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
             git add gaming_seen_articles.json
 
             if ! git diff --cached --quiet; then
               git commit -m "Update Gaming news history"
-              git push
+              git pull --rebase origin main
+              git push origin HEAD:main
             else
               echo "Nessuna nuova notizia da salvare."
             fi
