@@ -14,8 +14,8 @@ from xml.etree import ElementTree as ET
 import requests
 
 # ==========================================
-# ARTYKO GAMING NEWS V4
-# ANNUNCI, UPDATE, DLC E GAMEPLAY
+# ARTYKO GAMING NEWS V5
+# SOLO NOVITA' VIDEOLUDICHE
 # ==========================================
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -29,7 +29,7 @@ DRY_RUN = os.getenv(
 
 FEEDS = {
     "IGN Italia": "https://it.ign.com/feed.xml",
-    "GameSpot": "https://www.gamespot.com/feeds/game-news/"
+    "GameSpot": "https://www.gamespot.com/feeds/game-news/",
 }
 
 MAX_PER_FEED = 40
@@ -38,63 +38,66 @@ MAX_PER_RUN = 3
 
 session = requests.Session()
 session.headers.update({
-    "User-Agent": "ARTYKO-Gaming-News/4.0"
+    "User-Agent": "ARTYKO-Gaming-News/5.0"
 })
 
-# Tipologie che non vogliamo pubblicare.
+# Esclusioni relative al tema principale
+# dell'articolo, controllate sul titolo.
 EXCLUDED_TYPES = (
-    "recensione", "review", "guida", "guide",
-    "walkthrough", "soluzione", "trucchi",
-    "offerta", "offerte", "sconto", "sconti",
-    "coupon", "preorder", "pre order",
-    "preordini", "compra ora", "best deals",
-    "prezzo", "costa solo",
+    "recensione", "review",
+    "guida", "guide", "walkthrough",
+    "soluzione", "trucchi",
+    "offerta", "offerte",
+    "sconto", "sconti", "coupon",
+    "best deals", "deal",
+    "preorder", "pre order",
+    "preordini", "preordini aperti",
+    "quanto costa", "costa solo",
+    "prezzo", "price",
     "merchandising", "merchandise",
     "action figure", "funko pop",
     "gadget", "collezionabili",
     "magliette", "abbigliamento",
-    "colonna sonora in vinile",
-    "artbook",
+    "vinile", "artbook",
 )
 
-# Cinema, serie TV e adattamenti.
-NON_GAMING_TERMS = (
-    "al cinema", "nelle sale",
-    "box office", "botteghino",
+CINEMA_TV = (
     "film", "movie", "movies",
     "cinema", "cinematografico",
     "live action", "live-action",
     "serie tv", "serie televisiva",
     "tv series", "television series",
+    "adattamento televisivo",
+    "adattamento cinematografico",
     "episodio della serie",
     "stagione della serie",
     "seconda stagione",
     "terza stagione",
     "quarta stagione",
     "quinta stagione",
-    "adattamento televisivo",
-    "adattamento cinematografico",
-    "galleria di immagini",
+    "box office", "botteghino",
+    "al cinema", "nelle sale",
     "regista", "sceneggiatore",
     "cast", "attore", "attrice",
     "netflix", "disney plus",
     "prime video", "hbo max",
     "paramount plus",
     "warner bros pictures",
+    "galleria di immagini",
 )
 
-NON_GAMING_CATEGORIES = (
+CINEMA_CATEGORIES = (
     "cinema", "movies", "film",
     "televisione", "television",
     "tv", "serie tv", "streaming",
     "anime", "comics", "fumetti",
 )
 
-# Notizie commerciali, statistiche e record.
-COMMERCIAL_TERMS = (
-    "copie vendute",
+COMMERCIAL = (
+    "copie vendute", "copie piazzate",
     "milioni di copie",
     "milioni di giocatori",
+    "milioni di utenti",
     "record di giocatori",
     "record di utenti",
     "record di vendite",
@@ -103,75 +106,67 @@ COMMERCIAL_TERMS = (
     "ricavi", "profitti",
     "risultati finanziari",
     "risultati commerciali",
-    "mercato azionario",
-    "azioni in borsa",
-    "quotazione in borsa",
-    "ha venduto",
-    "piu venduto",
-    "piu venduti",
-    "best selling",
-    "sales figures",
-    "sales record",
-    "copies sold",
-    "million players",
-    "million copies",
-    "player count",
-    "concurrent players",
+    "ha venduto", "hanno venduto",
+    "piu venduto", "piu venduti",
+    "best selling", "copies sold",
+    "million players", "million copies",
+    "player count", "concurrent players",
     "revenue", "earnings",
     "financial results",
-    "stock price",
-    "share price",
+    "stock price", "share price",
+    "merchandising ufficiale",
 )
 
-# Segnali di vere novità videoludiche.
+# Parole e frasi che indicano una novita'
+# concreta riguardante un videogioco.
 NEWS_TERMS = (
-    "annunciato", "annunciata",
-    "annuncia", "annunciano",
-    "announced", "announcement",
-    "presentato", "presentata",
-    "presenta", "revealed",
+    "annuncia", "annunciato",
+    "annunciata", "annunciati",
+    "annunciate", "announced",
+    "announcement",
+    "presenta", "presentato",
+    "presentata", "revealed",
     "reveal", "svelato", "svelata",
     "confermato", "confermata",
     "confirmed",
     "nuovo gioco", "nuova ip",
     "new game", "new title",
     "in sviluppo", "in development",
-    "uscira", "uscita",
+    "uscita", "uscira", "uscite",
     "release date", "release window",
     "data di lancio", "data di uscita",
     "lancio", "launch",
     "disponibile", "available",
-    "arriva su", "arrivera su",
+    "arriva", "arrivera", "arrivano",
     "coming to", "coming soon",
-    "gameplay", "gameplay trailer",
-    "trailer di gioco",
-    "trailer del gioco",
-    "game trailer",
-    "nuovo trailer", "new trailer",
+    "gameplay", "trailer",
+    "mostrato", "mostrata",
+    "shown", "first look",
     "aggiornamento", "aggiornamenti",
-    "update", "updates",
+    "aggiorna", "aggiornato",
+    "aggiornata", "update", "updates",
     "patch", "hotfix",
     "bug fix", "bugfix",
+    "risolve", "corregge",
     "correzioni", "miglioramenti",
-    "nuove funzionalita",
-    "new features",
+    "improvements", "fixes",
     "nuova modalita", "new mode",
     "nuova mappa", "new map",
     "nuovo personaggio", "new character",
     "nuova classe", "new class",
+    "nuova espansione",
     "espansione", "expansion",
     "dlc", "contenuti aggiuntivi",
     "nuovi contenuti", "new content",
-    "stagione di gioco",
     "season update", "season pass",
     "early access", "accesso anticipato",
-    "beta", "playtest",
-    "demo", "roadmap",
-    "crossplay", "cross play",
-    "cross progression",
-    "server update",
-    "server test",
-    "maintenance update",
+    "beta", "playtest", "demo",
+    "roadmap", "crossplay",
+    "cross play", "cross progression",
+    "server update", "maintenance",
+    "post lancio", "post launch",
+    "upgrade", "remaster",
+    "remastered",
 )
 
 GAMING_TERMS = (
@@ -210,6 +205,7 @@ GAMING_TERMS = (
     "fable", "starfield",
     "hollow knight",
     "metal gear", "death stranding",
+    "hell is us", "the talos principle",
 )
 
 GAMING_CATEGORIES = (
@@ -274,11 +270,11 @@ def get_categories(item):
     result = []
 
     for category in item.findall("category"):
-        text = clean_text(
+        value = clean_text(
             "".join(category.itertext())
         )
-        if text:
-            result.append(text)
+        if value:
+            result.append(value)
 
     return result
 
@@ -286,61 +282,66 @@ def get_categories(item):
 def is_gaming_article(title, description, categories, source):
     title_key = normalize(title)
     description_key = normalize(description)
-    categories_key = normalize(
-        " ".join(categories)
-    )
+    category_keys = [
+        normalize(category)
+        for category in categories
+    ]
 
-    # Esclusioni assolute nel titolo.
+    # 1. Esclusioni sul tema del titolo.
     if has_term(title_key, EXCLUDED_TYPES):
         return False, "tipologia esclusa"
 
-    if has_term(title_key, NON_GAMING_TERMS):
+    if has_term(title_key, CINEMA_TV):
         return False, "cinema/TV"
 
-    if has_term(title_key, COMMERCIAL_TERMS):
-        return False, "vendite/record"
+    if has_term(title_key, COMMERCIAL):
+        return False, "vendite/record/merchandising"
 
-    # Le categorie non gaming prevalgono.
-    if has_term(
-        categories_key, NON_GAMING_CATEGORIES
+    # 2. Escludiamo le categorie esplicitamente
+    # cinematografiche o televisive.
+    if any(
+        has_term(category, CINEMA_CATEGORIES)
+        for category in category_keys
     ):
-        return False, "categoria non gaming"
+        return False, "categoria cinema/TV"
 
-    # Anche la descrizione può rivelare
-    # che si tratta di cinema o merchandising.
-    if has_term(
-        description_key, NON_GAMING_TERMS
-    ):
-        return False, "descrizione cinema/TV"
-
-    if has_term(
-        description_key, COMMERCIAL_TERMS
-    ):
-        return False, "descrizione commerciale"
-
-    if has_term(
-        description_key, EXCLUDED_TYPES
-    ):
-        return False, "descrizione esclusa"
-
-    # Richiediamo una novità concreta nel titolo.
+    # 3. Richiediamo una vera novita' nel titolo.
     if not has_term(title_key, NEWS_TERMS):
         return False, "non e una novita gaming"
 
-    # GameSpot è un feed gaming dedicato.
-    if source == "GameSpot":
-        return True, "novita da GameSpot"
+    # 4. Verifichiamo che il contenuto sia gaming.
+    has_gaming_category = any(
+        has_term(category, GAMING_CATEGORIES)
+        for category in category_keys
+    )
 
-    # IGN richiede anche un segnale gaming.
-    if has_term(
-        categories_key, GAMING_CATEGORIES
+    has_gaming_title = has_term(
+        title_key, GAMING_TERMS
+    )
+
+    if not (
+        source == "GameSpot"
+        or has_gaming_category
+        or has_gaming_title
     ):
+        return False, "nessun riferimento gaming"
+
+    # 5. Ulteriore protezione per articoli che
+    # hanno titoli generici come "Il trailer
+    # ufficiale", ma descrizioni di cinema.
+    if (
+        not has_gaming_title
+        and has_term(description_key, CINEMA_TV)
+    ):
+        return False, "descrizione cinema/TV"
+
+    if source == "GameSpot":
+        return True, "novita GameSpot"
+
+    if has_gaming_category:
         return True, "novita categoria gaming"
 
-    if has_term(title_key, GAMING_TERMS):
-        return True, "novita titolo gaming"
-
-    return False, "nessun riferimento gaming"
+    return True, "novita titolo gaming"
 
 
 def get_articles():
@@ -363,6 +364,7 @@ def get_articles():
                 )
 
             successful_feeds += 1
+
             print(
                 source,
                 "- articoli ricevuti:",
