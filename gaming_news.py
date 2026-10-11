@@ -8,14 +8,16 @@ import hashlib
 import unicodedata
 from pathlib import Path
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from urllib.parse import urlparse, urlunparse
 from xml.etree import ElementTree as ET
 
 import requests
 
 # ==========================================
-# ARTYKO GAMING NEWS V5
-# SOLO NOVITA' VIDEOLUDICHE
+# ARTYKO GAMING NEWS V6
+# MODALITA' EQUILIBRATA
+# MAX 2 NOTIZIE AL GIORNO
 # ==========================================
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -27,6 +29,9 @@ DRY_RUN = os.getenv(
     "GAMING_DRY_RUN", "true"
 ).lower() != "false"
 
+ITALY_TZ = ZoneInfo("Europe/Rome")
+DAILY_LIMIT = 2
+
 FEEDS = {
     "IGN Italia": "https://it.ign.com/feed.xml",
     "GameSpot": "https://www.gamespot.com/feeds/game-news/",
@@ -34,15 +39,13 @@ FEEDS = {
 
 MAX_PER_FEED = 40
 FIRST_RUN_LIMIT = 3
-MAX_PER_RUN = 3
+MAX_PER_RUN = 2
 
 session = requests.Session()
 session.headers.update({
-    "User-Agent": "ARTYKO-Gaming-News/5.0"
+    "User-Agent": "ARTYKO-Gaming-News/6.0"
 })
 
-# Esclusioni relative al tema principale
-# dell'articolo, controllate sul titolo.
 EXCLUDED_TYPES = (
     "recensione", "review",
     "guida", "guide", "walkthrough",
@@ -117,8 +120,6 @@ COMMERCIAL = (
     "merchandising ufficiale",
 )
 
-# Parole e frasi che indicano una novita'
-# concreta riguardante un videogioco.
 NEWS_TERMS = (
     "annuncia", "annunciato",
     "annunciata", "annunciati",
@@ -287,7 +288,6 @@ def is_gaming_article(title, description, categories, source):
         for category in categories
     ]
 
-    # 1. Esclusioni sul tema del titolo.
     if has_term(title_key, EXCLUDED_TYPES):
         return False, "tipologia esclusa"
 
@@ -297,19 +297,15 @@ def is_gaming_article(title, description, categories, source):
     if has_term(title_key, COMMERCIAL):
         return False, "vendite/record/merchandising"
 
-    # 2. Escludiamo le categorie esplicitamente
-    # cinematografiche o televisive.
     if any(
         has_term(category, CINEMA_CATEGORIES)
         for category in category_keys
     ):
         return False, "categoria cinema/TV"
 
-    # 3. Richiediamo una vera novita' nel titolo.
     if not has_term(title_key, NEWS_TERMS):
         return False, "non e una novita gaming"
 
-    # 4. Verifichiamo che il contenuto sia gaming.
     has_gaming_category = any(
         has_term(category, GAMING_CATEGORIES)
         for category in category_keys
@@ -326,9 +322,6 @@ def is_gaming_article(title, description, categories, source):
     ):
         return False, "nessun riferimento gaming"
 
-    # 5. Ulteriore protezione per articoli che
-    # hanno titoli generici come "Il trailer
-    # ufficiale", ma descrizioni di cinema.
     if (
         not has_gaming_title
         and has_term(description_key, CINEMA_TV)
@@ -342,6 +335,54 @@ def is_gaming_article(title, description, categories, source):
         return True, "novita categoria gaming"
 
     return True, "novita titolo gaming"
+
+
+def load_state():
+    if not STATE.exists():
+        return {
+            "seen": [],
+            "daily_counts": {}
+        }
+
+    data = json.loads(
+        STATE.read_text(encoding="utf-8")
+    )
+
+    # Compatibilita' con il vecchio storico V5.
+    if isinstance(data, list):
+        return {
+            "seen": data,
+            "daily_counts": {}
+        }
+
+    if isinstance(data, dict):
+        return {
+            "seen": data.get("seen", []),
+            "daily_counts": data.get(
+                "daily_counts", {}
+            )
+        }
+
+    raise RuntimeError(
+        "Formato storico non valido."
+    )
+
+
+def save_state(state):
+    STATE.write_text(
+        json.dumps(
+            state,
+            indent=2,
+            ensure_ascii=False
+        ),
+        encoding="utf-8"
+    )
+
+
+def today_italy():
+    return datetime.now(
+        ITALY_TZ
+    ).date().isoformat()
 
 
 def get_articles():
@@ -503,6 +544,39 @@ def send_discord(article):
 
 
 def main():
+    state = load_state()
+
+    seen = set(state["seen"])
+    daily_counts = state["daily_counts"]
+
+    today = today_italy()
+    published_today = int(
+        daily_counts.get(today, 0)
+    )
+
+    remaining = max(
+        0,
+        DAILY_LIMIT - published_today
+    )
+
+    print("=" * 42)
+    print("ARTYKO GAMING NEWS V6")
+    print("=" * 42)
+    print("Data italiana:", today)
+    print("Pubblicate oggi:", published_today)
+    print("Limite giornaliero:", DAILY_LIMIT)
+    print("Post disponibili:", remaining)
+    print("Simulazione:", DRY_RUN)
+
+    if remaining == 0:
+        print(
+            "Limite giornaliero raggiunto."
+        )
+        print(
+            "Nessuna nuova pubblicazione."
+        )
+        return
+
     articles = get_articles()
 
     if not articles:
@@ -513,18 +587,18 @@ def main():
         return
 
     if STATE.exists():
-        seen = set(json.loads(
-            STATE.read_text(encoding="utf-8")
-        ))
         new_articles = [
             article for article in articles
             if article["id"] not in seen
         ]
     else:
-        seen = set()
-        new_articles = articles[:FIRST_RUN_LIMIT]
+        new_articles = articles[
+            :FIRST_RUN_LIMIT
+        ]
 
-    selected = new_articles[:MAX_PER_RUN]
+    selected = new_articles[
+        :min(MAX_PER_RUN, remaining)
+    ]
 
     print(
         "NOTIZIE DA PUBBLICARE:",
@@ -550,12 +624,45 @@ def main():
 
     for article in selected:
         send_discord(article)
+
         seen.add(article["id"])
 
-        STATE.write_text(
-            json.dumps(sorted(seen), indent=2),
-            encoding="utf-8"
+        # Conteggio sulla data italiana effettiva
+        # del momento di pubblicazione.
+        publish_date = today_italy()
+
+        daily_counts[publish_date] = (
+            int(
+                daily_counts.get(
+                    publish_date, 0
+                )
+            ) + 1
         )
+
+        # Mantiene solo gli ultimi 30 giorni
+        # dei contatori giornalieri.
+        recent_dates = sorted(
+            daily_counts.keys()
+        )[-30:]
+
+        daily_counts = {
+            day: daily_counts[day]
+            for day in recent_dates
+        }
+
+        state["seen"] = sorted(seen)
+        state["daily_counts"] = daily_counts
+
+        save_state(state)
+
+        print(
+            "Pubblicata:",
+            article["title"],
+            "| Totale oggi:",
+            daily_counts[publish_date],
+            flush=True
+        )
+
         time.sleep(2)
 
     print(
