@@ -1,0 +1,57 @@
+
+name: ARTYKO Game Releases
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Pubblicare il calendario su Discord?"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: artyko-game-releases
+  cancel-in-progress: false
+
+jobs:
+  game-releases:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Scarica repository
+        uses: actions/checkout@v4
+
+      - name: Configura Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Installa librerie
+        run: pip install requests beautifulsoup4
+
+      - name: Controlla calendario uscite
+        env:
+          DISCORD_WEBHOOK_RELEASES: ${{ secrets.DISCORD_WEBHOOK_RELEASES }}
+          RELEASES_DRY_RUN: ${{ inputs.publish == true && 'false' || 'true' }}
+        run: python -u releases_news.py
+
+      - name: Salva storico pubblicazioni
+        if: ${{ inputs.publish == true }}
+        run: |
+          if [ -f releases_seen.json ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add releases_seen.json
+
+            if ! git diff --cached --quiet; then
+              git commit -m "Update game releases history"
+              git push
+            else
+              echo "Nessun aggiornamento allo storico."
+            fi
+          fi
