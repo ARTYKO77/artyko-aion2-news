@@ -10,6 +10,9 @@ on:
         type: boolean
         default: false
 
+  schedule:
+    - cron: '9,29,49 * * * *'
+
 permissions:
   contents: write
 
@@ -37,11 +40,11 @@ jobs:
       - name: Controlla notizie MMO
         env:
           DISCORD_WEBHOOK_MMO: ${{ secrets.DISCORD_WEBHOOK_MMO }}
-          MMO_DRY_RUN: ${{ inputs.publish == true && 'false' || 'true' }}
+          MMO_DRY_RUN: ${{ (github.event_name == 'schedule' || inputs.publish == true) && 'false' || 'true' }}
         run: python -u mmo_news.py
 
       - name: Salva storico notizie MMO
-        if: ${{ inputs.publish == true }}
+        if: ${{ github.event_name == 'schedule' || inputs.publish == true }}
         run: |
           if [ -f mmo_seen_articles.json ]; then
             git config user.name "github-actions[bot]"
