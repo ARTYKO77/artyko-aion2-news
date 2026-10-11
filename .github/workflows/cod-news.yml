@@ -40,7 +40,7 @@ jobs:
       - name: Esegui ARTYKO COD NEWS
         env:
           DISCORD_WEBHOOK_COD: ${{ secrets.DISCORD_WEBHOOK_COD }}
-          COD_DRY_RUN: ${{ github.event_name == 'schedule' || inputs.publish == true && 'false' || 'true' }}
+          COD_DRY_RUN: ${{ (github.event_name == 'schedule' || inputs.publish == true) && 'false' || 'true' }}
         run: python -u cod_news.py
 
       - name: Salva storico articoli
