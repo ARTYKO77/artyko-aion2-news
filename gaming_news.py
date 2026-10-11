@@ -14,8 +14,8 @@ from xml.etree import ElementTree as ET
 import requests
 
 # ==========================================
-# ARTYKO GAMING NEWS V3
-# SOLO VIDEOGIOCHI - NO CINEMA / TV
+# ARTYKO GAMING NEWS V4
+# ANNUNCI, UPDATE, DLC E GAMEPLAY
 # ==========================================
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -38,71 +38,146 @@ MAX_PER_RUN = 3
 
 session = requests.Session()
 session.headers.update({
-    "User-Agent": "ARTYKO-Gaming-News/3.0"
+    "User-Agent": "ARTYKO-Gaming-News/4.0"
 })
 
+# Tipologie che non vogliamo pubblicare.
 EXCLUDED_TYPES = (
     "recensione", "review", "guida", "guide",
-    "soluzione", "walkthrough", "trucchi",
-    "offerta", "sconto", "coupon",
-    "preorder", "pre order", "preordini",
-    "compra ora", "best deals",
-    "merchandising", "action figure",
-    "collezionabili", "funko pop",
-    "gadget ufficiali"
+    "walkthrough", "soluzione", "trucchi",
+    "offerta", "offerte", "sconto", "sconti",
+    "coupon", "preorder", "pre order",
+    "preordini", "compra ora", "best deals",
+    "prezzo", "costa solo",
+    "merchandising", "merchandise",
+    "action figure", "funko pop",
+    "gadget", "collezionabili",
+    "magliette", "abbigliamento",
+    "colonna sonora in vinile",
+    "artbook",
 )
 
-# Segnali forti di contenuto cinematografico
-# o televisivo. Non blocchiamo la sola parola
-# "trailer", perché esistono trailer dei giochi.
+# Cinema, serie TV e adattamenti.
 NON_GAMING_TERMS = (
     "al cinema", "nelle sale",
     "box office", "botteghino",
-    "film live action", "film live-action",
-    "film di", "film tratto",
-    "film basato", "nuovo film",
-    "film horror", "film d azione",
-    "adattamento cinematografico",
-    "adattamento televisivo",
+    "film", "movie", "movies",
+    "cinema", "cinematografico",
+    "live action", "live-action",
     "serie tv", "serie televisiva",
-    "nuova serie tv",
+    "tv series", "television series",
     "episodio della serie",
     "stagione della serie",
-    "stagione 2", "stagione 3",
-    "stagione 4", "stagione 5",
+    "seconda stagione",
+    "terza stagione",
+    "quarta stagione",
+    "quinta stagione",
+    "adattamento televisivo",
+    "adattamento cinematografico",
     "galleria di immagini",
-    "trailer ufficiale del film",
     "regista", "sceneggiatore",
-    "cast del film", "attore protagonista",
-    "warner bros pictures",
+    "cast", "attore", "attrice",
     "netflix", "disney plus",
     "prime video", "hbo max",
     "paramount plus",
-    "cinematografico",
+    "warner bros pictures",
 )
 
 NON_GAMING_CATEGORIES = (
     "cinema", "movies", "film",
     "televisione", "television",
     "tv", "serie tv", "streaming",
-    "anime", "comics", "fumetti"
+    "anime", "comics", "fumetti",
 )
 
-GAMING_CATEGORIES = (
-    "videogiochi", "videogames",
-    "video games", "gaming",
-    "games", "playstation",
-    "xbox", "nintendo",
-    "pc gaming", "esports",
-    "mmorpg"
+# Notizie commerciali, statistiche e record.
+COMMERCIAL_TERMS = (
+    "copie vendute",
+    "milioni di copie",
+    "milioni di giocatori",
+    "record di giocatori",
+    "record di utenti",
+    "record di vendite",
+    "record di incassi",
+    "vendite", "fatturato",
+    "ricavi", "profitti",
+    "risultati finanziari",
+    "risultati commerciali",
+    "mercato azionario",
+    "azioni in borsa",
+    "quotazione in borsa",
+    "ha venduto",
+    "piu venduto",
+    "piu venduti",
+    "best selling",
+    "sales figures",
+    "sales record",
+    "copies sold",
+    "million players",
+    "million copies",
+    "player count",
+    "concurrent players",
+    "revenue", "earnings",
+    "financial results",
+    "stock price",
+    "share price",
+)
+
+# Segnali di vere novità videoludiche.
+NEWS_TERMS = (
+    "annunciato", "annunciata",
+    "annuncia", "annunciano",
+    "announced", "announcement",
+    "presentato", "presentata",
+    "presenta", "revealed",
+    "reveal", "svelato", "svelata",
+    "confermato", "confermata",
+    "confirmed",
+    "nuovo gioco", "nuova ip",
+    "new game", "new title",
+    "in sviluppo", "in development",
+    "uscira", "uscita",
+    "release date", "release window",
+    "data di lancio", "data di uscita",
+    "lancio", "launch",
+    "disponibile", "available",
+    "arriva su", "arrivera su",
+    "coming to", "coming soon",
+    "gameplay", "gameplay trailer",
+    "trailer di gioco",
+    "trailer del gioco",
+    "game trailer",
+    "nuovo trailer", "new trailer",
+    "aggiornamento", "aggiornamenti",
+    "update", "updates",
+    "patch", "hotfix",
+    "bug fix", "bugfix",
+    "correzioni", "miglioramenti",
+    "nuove funzionalita",
+    "new features",
+    "nuova modalita", "new mode",
+    "nuova mappa", "new map",
+    "nuovo personaggio", "new character",
+    "nuova classe", "new class",
+    "espansione", "expansion",
+    "dlc", "contenuti aggiuntivi",
+    "nuovi contenuti", "new content",
+    "stagione di gioco",
+    "season update", "season pass",
+    "early access", "accesso anticipato",
+    "beta", "playtest",
+    "demo", "roadmap",
+    "crossplay", "cross play",
+    "cross progression",
+    "server update",
+    "server test",
+    "maintenance update",
 )
 
 GAMING_TERMS = (
     "videogioco", "videogiochi",
     "videogame", "video game",
     "gaming", "gameplay",
-    "videoludico", "videoludica",
-    "giocatori", "giocatore",
     "playstation", "ps5", "ps4",
     "xbox", "nintendo", "switch",
     "steam", "game pass",
@@ -111,11 +186,8 @@ GAMING_TERMS = (
     "bethesda", "capcom",
     "fromsoftware", "bandai namco",
     "square enix", "cd projekt",
-    "rockstar", "unreal engine",
-    "mmorpg", "multiplayer",
-    "dlc", "patch", "esport",
-    "esports", "early access",
-    "accesso anticipato",
+    "rockstar", "mmorpg",
+    "multiplayer", "dlc",
     "gta", "call of duty",
     "battlefield", "resident evil",
     "final fantasy", "monster hunter",
@@ -137,7 +209,16 @@ GAMING_TERMS = (
     "arc raiders", "marathon",
     "fable", "starfield",
     "hollow knight",
-    "metal gear", "death stranding"
+    "metal gear", "death stranding",
+)
+
+GAMING_CATEGORIES = (
+    "videogiochi", "videogames",
+    "video games", "gaming",
+    "games", "playstation",
+    "xbox", "nintendo",
+    "pc gaming", "esports",
+    "mmorpg",
 )
 
 
@@ -147,8 +228,10 @@ def clean_text(value):
     return " ".join(value.split())
 
 
-def normalize_title(value):
-    value = unicodedata.normalize("NFKD", value or "")
+def normalize(value):
+    value = unicodedata.normalize(
+        "NFKD", value or ""
+    )
     value = "".join(
         char for char in value
         if not unicodedata.combining(char)
@@ -164,7 +247,7 @@ def has_term(text, terms):
             r"(?<![a-z0-9])"
             + re.escape(term)
             + r"(?![a-z0-9])",
-            text
+            text,
         )
         for term in terms
     )
@@ -201,54 +284,63 @@ def get_categories(item):
 
 
 def is_gaming_article(title, description, categories, source):
-    title_key = normalize_title(title)
-    desc_key = normalize_title(description)
-    categories_key = normalize_title(
+    title_key = normalize(title)
+    description_key = normalize(description)
+    categories_key = normalize(
         " ".join(categories)
     )
 
-    # 1. Tipologie escluse.
+    # Esclusioni assolute nel titolo.
     if has_term(title_key, EXCLUDED_TYPES):
         return False, "tipologia esclusa"
 
-    # 2. Esclusione categorie cinema/TV.
-    if has_term(
-        categories_key,
-        NON_GAMING_CATEGORIES
-    ):
-        return False, "categoria cinema/TV"
+    if has_term(title_key, NON_GAMING_TERMS):
+        return False, "cinema/TV"
 
-    # 3. Esclusione argomenti cinema/TV.
-    if has_term(
-        title_key,
-        NON_GAMING_TERMS
-    ):
-        return False, "argomento cinema/TV"
+    if has_term(title_key, COMMERCIAL_TERMS):
+        return False, "vendite/record"
 
-    # 4. Segnali cinematografici nella descrizione:
-    # richiediamo una verifica più prudente.
-    if has_term(desc_key, NON_GAMING_TERMS):
+    # Le categorie non gaming prevalgono.
+    if has_term(
+        categories_key, NON_GAMING_CATEGORIES
+    ):
+        return False, "categoria non gaming"
+
+    # Anche la descrizione può rivelare
+    # che si tratta di cinema o merchandising.
+    if has_term(
+        description_key, NON_GAMING_TERMS
+    ):
         return False, "descrizione cinema/TV"
 
-    # 5. Fonte specializzata.
+    if has_term(
+        description_key, COMMERCIAL_TERMS
+    ):
+        return False, "descrizione commerciale"
+
+    if has_term(
+        description_key, EXCLUDED_TYPES
+    ):
+        return False, "descrizione esclusa"
+
+    # Richiediamo una novità concreta nel titolo.
+    if not has_term(title_key, NEWS_TERMS):
+        return False, "non e una novita gaming"
+
+    # GameSpot è un feed gaming dedicato.
     if source == "GameSpot":
-        return True, "feed gaming dedicato"
+        return True, "novita da GameSpot"
 
-    # 6. Categoria videoludica.
+    # IGN richiede anche un segnale gaming.
     if has_term(
-        categories_key,
-        GAMING_CATEGORIES
+        categories_key, GAMING_CATEGORIES
     ):
-        return True, "categoria gaming"
+        return True, "novita categoria gaming"
 
-    # 7. Titolo con segnali gaming.
-    if has_term(
-        title_key,
-        GAMING_TERMS
-    ):
-        return True, "titolo gaming"
+    if has_term(title_key, GAMING_TERMS):
+        return True, "novita titolo gaming"
 
-    return False, "nessun segnale gaming"
+    return False, "nessun riferimento gaming"
 
 
 def get_articles():
@@ -262,9 +354,7 @@ def get_articles():
             )
             response.raise_for_status()
 
-            root = ET.fromstring(
-                response.content
-            )
+            root = ET.fromstring(response.content)
             items = root.findall(".//item")
 
             if not items:
@@ -273,7 +363,6 @@ def get_articles():
                 )
 
             successful_feeds += 1
-
             print(
                 source,
                 "- articoli ricevuti:",
@@ -311,7 +400,7 @@ def get_articles():
                 if not allowed:
                     continue
 
-                title_key = normalize_title(title)
+                title_key = normalize(title)
                 url_key = normalize_url(link)
 
                 article_id = hashlib.sha256(
@@ -465,7 +554,6 @@ def main():
             json.dumps(sorted(seen), indent=2),
             encoding="utf-8"
         )
-
         time.sleep(2)
 
     print(
