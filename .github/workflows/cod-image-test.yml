@@ -1,0 +1,30 @@
+
+name: ARTYKO COD Image Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  image-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Scarica repository
+        uses: actions/checkout@v4
+
+      - name: Configura Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Installa librerie
+        run: pip install requests beautifulsoup4 pillow
+
+      - name: Test immagine Discord
+        env:
+          DISCORD_WEBHOOK_COD: ${{ secrets.DISCORD_WEBHOOK_COD }}
+        run: python -u cod_image_test.py
