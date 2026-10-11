@@ -13,7 +13,7 @@ import requests
 import feedparser
 
 # =====================================
-# ARTYKO MMO NEWS - VERSIONE 2
+# ARTYKO MMO NEWS - VERSIONE 3
 # =====================================
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -33,51 +33,91 @@ FEEDS = {
 MAX_PER_RUN = 3
 MAX_FEED_ITEMS = 50
 
-# MMORPG e giochi online persistenti prioritari.
+# Giochi MMORPG e mondi online persistenti.
 MMO_KEYWORDS = (
-    "mmorpg", "mmo",
-    "world of warcraft", "wow classic",
-    "warcraft", "aion",
-    "final fantasy xiv", "ffxiv",
-    "guild wars", "elder scrolls online",
-    "black desert", "runescape",
+    "mmorpg",
+    "mmo",
+    "world of warcraft",
+    "wow classic",
+    "warcraft",
+    "aion",
+    "final fantasy xiv",
+    "ffxiv",
+    "guild wars",
+    "elder scrolls online",
+    "black desert",
+    "runescape",
     "old school runescape",
     "ashes of creation",
     "chrono odyssey",
-    "archeage", "throne and liberty",
-    "lost ark", "new world",
-    "eve online", "albion online",
-    "blade and soul", "blade & soul",
-    "maplestory", "lineage",
-    "blue protocol", "pax dei",
-    "star citizen", "pantheon",
-    "everquest", "dune awakening",
+    "archeage",
+    "throne and liberty",
+    "lost ark",
+    "new world",
+    "eve online",
+    "albion online",
+    "blade and soul",
+    "blade & soul",
+    "maplestory",
+    "lineage",
+    "blue protocol",
+    "pax dei",
+    "star citizen",
+    "pantheon",
+    "everquest",
+    "dune awakening",
     "dune: awakening",
-    "once human", "soulframe",
-    "the quinfall", "corepunk",
-    "project gorgon", "tower of fantasy",
+    "once human",
+    "soulframe",
+    "the quinfall",
+    "corepunk",
+    "project gorgon",
+    "tower of fantasy",
     "the first descendant",
-    "destiny 2", "warframe",
+    "destiny 2",
+    "warframe",
     "fractured online",
 )
 
-# Esclusioni esplicite per ridurre il rumore.
+# Contenuti da evitare.
 EXCLUDED_KEYWORDS = (
     "sea of thieves",
-    "fortnite", "valorant",
-    "counter-strike", "call of duty",
-    "apex legends", "overwatch",
+    "fortnite",
+    "valorant",
+    "counter-strike",
+    "call of duty",
+    "apex legends",
+    "overwatch",
     "league of legends",
     "marvel rivals",
-    "review", "recensione",
-    "buyer's guide", "shopping guide",
-    "best deals", "coupon",
+    "review",
+    "recensione",
+    "buyer's guide",
+    "shopping guide",
+    "best deals",
+    "coupon",
     "discount code",
+)
+
+GENERIC_MMO_TERMS = (
+    "mmorpg",
+    "massively multiplayer",
+    "massively-multiplayer",
+    "new mmo",
+    "upcoming mmo",
+    "sandbox mmo",
+    "fantasy mmo",
+)
+
+ANNOUNCEMENT_TERMS = (
+    "new online rpg",
+    "new online game",
+    "new multiplayer rpg",
 )
 
 session = requests.Session()
 session.headers.update({
-    "User-Agent": "ARTYKO-MMO-News/2.0"
+    "User-Agent": "ARTYKO-MMO-News/3.0"
 })
 
 
@@ -89,6 +129,7 @@ def clean_text(value):
 
 def article_key(url):
     parts = urlsplit(url.strip())
+
     normalized = urlunsplit((
         parts.scheme.lower(),
         parts.netloc.lower(),
@@ -96,6 +137,7 @@ def article_key(url):
         "",
         ""
     ))
+
     return hashlib.sha256(
         normalized.encode("utf-8")
     ).hexdigest()
@@ -105,9 +147,11 @@ def load_seen():
     if not STATE_FILE.exists():
         return set()
 
-    return set(json.loads(
+    data = json.loads(
         STATE_FILE.read_text(encoding="utf-8")
-    ))
+    )
+
+    return set(data)
 
 
 def save_seen(seen):
@@ -121,22 +165,53 @@ def save_seen(seen):
     )
 
 
-def is_relevant(article):
-    text = (
-        article["title"] + " "
-        + article["description"]
-    ).lower()
+def contains_keyword(text, keyword):
+    # Evita corrispondenze dentro altre parole.
+    pattern = (
+        r"(?<!\w)"
+        + re.escape(keyword)
+        + r"(?!\w)"
+    )
 
-    if any(
-        keyword in text
-        for keyword in EXCLUDED_KEYWORDS
-    ):
+    return re.search(pattern, text) is not None
+
+
+def contains_any(text, keywords):
+    return any(
+        contains_keyword(text, keyword)
+        for keyword in keywords
+    )
+
+
+def is_relevant(article):
+    title = article["title"].lower()
+    description = article["description"].lower()
+
+    # Esclude argomenti indesiderati.
+    if contains_any(title, EXCLUDED_KEYWORDS):
         return False
 
-    return any(
-        keyword in text
-        for keyword in MMO_KEYWORDS
-    )
+    # I titoli che nominano MMORPG noti
+    # hanno la priorita'.
+    if contains_any(title, MMO_KEYWORDS):
+        return True
+
+    # Intercetta annunci di MMORPG nuovi
+    # anche senza un nome gia' conosciuto.
+    if contains_any(title, GENERIC_MMO_TERMS):
+        return True
+
+    # La descrizione e' solo un supporto.
+    if (
+        contains_any(title, ANNOUNCEMENT_TERMS)
+        and contains_any(
+            description,
+            GENERIC_MMO_TERMS
+        )
+    ):
+        return True
+
+    return False
 
 
 def fetch_articles():
@@ -148,11 +223,14 @@ def fetch_articles():
 
         try:
             response = session.get(
-                feed_url, timeout=25
+                feed_url,
+                timeout=25
             )
             response.raise_for_status()
 
-            feed = feedparser.parse(response.content)
+            feed = feedparser.parse(
+                response.content
+            )
 
             if not feed.entries:
                 raise ValueError(
@@ -163,7 +241,7 @@ def fetch_articles():
 
             print(
                 f"{source}: "
-                f"{len(feed.entries)} articoli",
+                f"{len(feed.entries)} articoli ricevuti",
                 flush=True
             )
 
@@ -171,7 +249,11 @@ def fetch_articles():
                 title = clean_text(
                     entry.get("title", "")
                 )
-                url = entry.get("link", "").strip()
+
+                url = entry.get(
+                    "link", ""
+                ).strip()
+
                 description = clean_text(
                     entry.get("summary", "")
                 )
@@ -190,7 +272,9 @@ def fetch_articles():
                 }
 
                 if is_relevant(article):
-                    by_source[source].append(article)
+                    by_source[source].append(
+                        article
+                    )
 
             print(
                 f"{source}: "
@@ -201,7 +285,8 @@ def fetch_articles():
 
         except Exception as error:
             print(
-                f"ERRORE {source}: {error}",
+                f"ERRORE FONTE {source}: "
+                f"{error}",
                 flush=True
             )
 
@@ -210,25 +295,34 @@ def fetch_articles():
             "Nessuna fonte MMO disponibile"
         )
 
-    # Alterna le fonti per dare spazio a entrambe.
+    # Alterna gli articoli delle fonti.
     combined = []
+
     max_length = max(
-        (len(items) for items in by_source.values()),
+        (
+            len(items)
+            for items in by_source.values()
+        ),
         default=0
     )
 
     for index in range(max_length):
         for source in FEEDS:
             items = by_source[source]
-            if index < len(items):
-                combined.append(items[index])
 
+            if index < len(items):
+                combined.append(
+                    items[index]
+                )
+
+    # Elimina gli URL duplicati.
     unique = []
     known = set()
 
     for article in combined:
         if article["id"] in known:
             continue
+
         known.add(article["id"])
         unique.append(article)
 
@@ -255,7 +349,9 @@ def publish_article(article):
     embed = {
         "title": article["title"][:256],
         "url": article["url"],
-        "description": article["description"][:350],
+        "description": (
+            article["description"][:350]
+        ),
         "color": 0x00D9B5,
         "image": {
             "url": "attachment://mmo_cover.png"
@@ -280,7 +376,9 @@ def publish_article(article):
         response = session.post(
             WEBHOOK,
             data={
-                "payload_json": json.dumps(payload)
+                "payload_json": json.dumps(
+                    payload
+                )
             },
             files={
                 "files[0]": (
@@ -297,12 +395,13 @@ def publish_article(article):
 
 def main():
     print(
-        "=== ARTYKO MMO NEWS V2 ===",
+        "=== ARTYKO MMO NEWS V3 ===",
         flush=True
     )
 
     print(
-        "Simulazione:", DRY_RUN,
+        "Simulazione:",
+        DRY_RUN,
         flush=True
     )
 
@@ -310,7 +409,8 @@ def main():
     seen = load_seen()
 
     new_articles = [
-        article for article in articles
+        article
+        for article in articles
         if article["id"] not in seen
     ]
 
@@ -322,12 +422,19 @@ def main():
         flush=True
     )
 
+    print(
+        "Notizie pronte:",
+        len(selected),
+        flush=True
+    )
+
     for article in selected:
         print(
             f"[{article['source']}] "
             f"{article['title']}",
             flush=True
         )
+
         print(
             article["url"],
             flush=True
@@ -343,6 +450,7 @@ def main():
 
     for article in selected:
         publish_article(article)
+
         seen.add(article["id"])
         save_seen(seen)
 
