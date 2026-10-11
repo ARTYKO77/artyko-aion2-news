@@ -13,10 +13,10 @@ from xml.etree import ElementTree as ET
 
 import requests
 
-# =========================================
-# ARTYKO GAMING NEWS - V2
-# FILTRO GAMING + PROTEZIONE CONTENUTI
-# =========================================
+# ==========================================
+# ARTYKO GAMING NEWS V3
+# SOLO VIDEOGIOCHI - NO CINEMA / TV
+# ==========================================
 
 BASE_DIR = Path(__file__).resolve().parent
 STATE = BASE_DIR / "gaming_seen_articles.json"
@@ -32,145 +32,112 @@ FEEDS = {
     "GameSpot": "https://www.gamespot.com/feeds/game-news/"
 }
 
-MAX_PER_FEED = 30
+MAX_PER_FEED = 40
 FIRST_RUN_LIMIT = 3
 MAX_PER_RUN = 3
 
 session = requests.Session()
 session.headers.update({
-    "User-Agent": "ARTYKO-Gaming-News/2.0"
+    "User-Agent": "ARTYKO-Gaming-News/3.0"
 })
 
-EXCLUDED = (
-    "recensione", "review", "guida",
-    "guide", "soluzione", "walkthrough",
-    "trucchi", "offerta", "sconto",
-    "coupon", "preorder", "pre order",
-    "compra ora", "migliori offerte",
-    "best deals"
+EXCLUDED_TYPES = (
+    "recensione", "review", "guida", "guide",
+    "soluzione", "walkthrough", "trucchi",
+    "offerta", "sconto", "coupon",
+    "preorder", "pre order", "preordini",
+    "compra ora", "best deals",
+    "merchandising", "action figure",
+    "collezionabili", "funko pop",
+    "gadget ufficiali"
 )
 
-# Argomenti tipicamente estranei ai videogiochi.
-NON_GAMING = (
-    "al cinema",
-    "nelle sale",
-    "box office",
-    "incassi al botteghino",
-    "trailer ufficiale del film",
-    "nuovo film",
-    "film horror",
-    "film d azione",
-    "galleria di immagini",
-    "stagione della serie",
+# Segnali forti di contenuto cinematografico
+# o televisivo. Non blocchiamo la sola parola
+# "trailer", perché esistono trailer dei giochi.
+NON_GAMING_TERMS = (
+    "al cinema", "nelle sale",
+    "box office", "botteghino",
+    "film live action", "film live-action",
+    "film di", "film tratto",
+    "film basato", "nuovo film",
+    "film horror", "film d azione",
+    "adattamento cinematografico",
+    "adattamento televisivo",
+    "serie tv", "serie televisiva",
+    "nuova serie tv",
     "episodio della serie",
-    "serie tv",
-    "serie televisiva",
-    "netflix",
-    "prime video",
-    "disney plus",
-    "hbo max",
+    "stagione della serie",
+    "stagione 2", "stagione 3",
+    "stagione 4", "stagione 5",
+    "galleria di immagini",
+    "trailer ufficiale del film",
+    "regista", "sceneggiatore",
+    "cast del film", "attore protagonista",
     "warner bros pictures",
+    "netflix", "disney plus",
+    "prime video", "hbo max",
+    "paramount plus",
+    "cinematografico",
 )
 
-# Termini che indicano contenuti gaming.
-GAMING_TERMS = (
-    "videogioco",
-    "videogiochi",
-    "videogame",
-    "video game",
-    "gaming",
-    "gameplay",
-    "gioco",
-    "giochi",
-    "giocatori",
-    "playstation",
-    "ps5",
-    "ps4",
-    "xbox",
-    "nintendo",
-    "switch",
-    "steam",
-    "pc gaming",
-    "computer gaming",
-    "game pass",
-    "epic games",
-    "ubisoft",
-    "electronic arts",
-    "activision",
-    "blizzard",
-    "bethesda",
-    "capcom",
-    "fromsoftware",
-    "bandai namco",
-    "square enix",
-    "cd projekt",
-    "rockstar games",
-    "unreal engine",
-    "mmorpg",
-    "rpg",
-    "fps",
-    "dlc",
-    "patch",
-    "aggiornamento",
-    "early access",
-    "accesso anticipato",
-    "multiplayer",
-    "esport",
-    "e sport",
-    "gta",
-    "call of duty",
-    "battlefield",
-    "resident evil",
-    "final fantasy",
-    "monster hunter",
-    "assassin s creed",
-    "elden ring",
-    "warframe",
-    "escape from tarkov",
-    "aion 2",
-    "wardogs",
-    "world of warcraft",
-    "minecraft",
-    "fortnite",
-    "pokemon",
-    "zelda",
-    "mario kart",
-    "super mario",
-    "silent hill",
-    "the witcher",
-    "crimson desert",
-    "phantom blade",
-    "gears of war",
-)
-
-# Categorie RSS chiaramente gaming.
-GAMING_CATEGORIES = (
-    "videogiochi",
-    "video games",
-    "videogames",
-    "gaming",
-    "games",
-    "playstation",
-    "xbox",
-    "nintendo",
-    "pc gaming",
-    "esports",
-    "mmorpg",
-)
-
-# Categorie RSS chiaramente non gaming.
 NON_GAMING_CATEGORIES = (
-    "cinema",
-    "movies",
-    "film",
-    "televisione",
-    "television",
-    "tv",
-    "serie tv",
-    "streaming",
-    "anime",
-    "comics",
-    "fumetti",
+    "cinema", "movies", "film",
+    "televisione", "television",
+    "tv", "serie tv", "streaming",
+    "anime", "comics", "fumetti"
+)
+
+GAMING_CATEGORIES = (
+    "videogiochi", "videogames",
+    "video games", "gaming",
+    "games", "playstation",
+    "xbox", "nintendo",
+    "pc gaming", "esports",
+    "mmorpg"
+)
+
+GAMING_TERMS = (
+    "videogioco", "videogiochi",
+    "videogame", "video game",
+    "gaming", "gameplay",
+    "videoludico", "videoludica",
+    "giocatori", "giocatore",
+    "playstation", "ps5", "ps4",
+    "xbox", "nintendo", "switch",
+    "steam", "game pass",
+    "epic games", "ubisoft",
+    "activision", "blizzard",
+    "bethesda", "capcom",
+    "fromsoftware", "bandai namco",
+    "square enix", "cd projekt",
+    "rockstar", "unreal engine",
+    "mmorpg", "multiplayer",
+    "dlc", "patch", "esport",
+    "esports", "early access",
+    "accesso anticipato",
+    "gta", "call of duty",
+    "battlefield", "resident evil",
+    "final fantasy", "monster hunter",
+    "assassin s creed", "elden ring",
+    "warframe", "escape from tarkov",
+    "aion 2", "wardogs",
+    "world of warcraft", "minecraft",
+    "fortnite", "pokemon",
+    "zelda", "mario kart",
+    "super mario", "silent hill",
+    "the witcher", "crimson desert",
+    "phantom blade", "gears of war",
+    "state of decay", "tomb raider",
+    "mafia", "forza horizon",
+    "stalker", "cyberpunk",
+    "bioshock", "halo",
+    "borderlands", "diablo",
+    "overwatch", "destiny",
+    "arc raiders", "marathon",
+    "fable", "starfield",
+    "hollow knight",
+    "metal gear", "death stranding"
 )
 
 
@@ -180,14 +147,14 @@ def clean_text(value):
     return " ".join(value.split())
 
 
-def normalize_title(title):
-    title = unicodedata.normalize("NFKD", title)
-    title = "".join(
-        char for char in title
+def normalize_title(value):
+    value = unicodedata.normalize("NFKD", value or "")
+    value = "".join(
+        char for char in value
         if not unicodedata.combining(char)
     )
     return re.sub(
-        r"[^a-z0-9]+", " ", title.lower()
+        r"[^a-z0-9]+", " ", value.lower()
     ).strip()
 
 
@@ -197,7 +164,7 @@ def has_term(text, terms):
             r"(?<![a-z0-9])"
             + re.escape(term)
             + r"(?![a-z0-9])",
-            text,
+            text
         )
         for term in terms
     )
@@ -209,9 +176,7 @@ def normalize_url(url):
         parsed.scheme,
         parsed.netloc.lower(),
         parsed.path.rstrip("/"),
-        "",
-        "",
-        ""
+        "", "", ""
     ))
 
 
@@ -223,87 +188,77 @@ def element_text(parent, name):
 
 
 def get_categories(item):
-    categories = []
+    result = []
 
     for category in item.findall("category"):
         text = clean_text(
             "".join(category.itertext())
         )
         if text:
-            categories.append(text)
+            result.append(text)
 
-    return categories
+    return result
 
 
 def is_gaming_article(title, description, categories, source):
     title_key = normalize_title(title)
-    description_key = normalize_title(description)
+    desc_key = normalize_title(description)
     categories_key = normalize_title(
         " ".join(categories)
     )
 
-    combined = f"{title_key} {description_key}"
-
-    if has_term(title_key, EXCLUDED):
+    # 1. Tipologie escluse.
+    if has_term(title_key, EXCLUDED_TYPES):
         return False, "tipologia esclusa"
 
-    gaming_category = has_term(
-        categories_key, GAMING_CATEGORIES
-    )
-    non_gaming_category = has_term(
-        categories_key, NON_GAMING_CATEGORIES
-    )
-
-    gaming_title = has_term(
-        title_key, GAMING_TERMS
-    )
-    gaming_description = has_term(
-        description_key, GAMING_TERMS
-    )
-
-    non_gaming_content = has_term(
-        combined, NON_GAMING
-    )
-
-    # Categoria esplicitamente non gaming:
-    # ammettiamo solo se c'è anche una categoria
-    # gaming e il titolo parla di gaming.
-    if non_gaming_category and not (
-        gaming_category and gaming_title
+    # 2. Esclusione categorie cinema/TV.
+    if has_term(
+        categories_key,
+        NON_GAMING_CATEGORIES
     ):
-        return False, "categoria non gaming"
+        return False, "categoria cinema/TV"
 
-    # Cinema/TV senza un riferimento gaming
-    # esplicito nel titolo.
-    if non_gaming_content and not gaming_title:
-        return False, "contenuto cinema/TV"
+    # 3. Esclusione argomenti cinema/TV.
+    if has_term(
+        title_key,
+        NON_GAMING_TERMS
+    ):
+        return False, "argomento cinema/TV"
 
-    # GameSpot usa un feed dedicato alle game news.
-    # Resta comunque attivo il filtro negativo.
+    # 4. Segnali cinematografici nella descrizione:
+    # richiediamo una verifica più prudente.
+    if has_term(desc_key, NON_GAMING_TERMS):
+        return False, "descrizione cinema/TV"
+
+    # 5. Fonte specializzata.
     if source == "GameSpot":
         return True, "feed gaming dedicato"
 
-    # IGN Italia: prima le categorie.
-    if gaming_category:
+    # 6. Categoria videoludica.
+    if has_term(
+        categories_key,
+        GAMING_CATEGORIES
+    ):
         return True, "categoria gaming"
 
-    # In assenza di categorie affidabili,
-    # richiediamo un riferimento gaming nel titolo.
-    if gaming_title:
+    # 7. Titolo con segnali gaming.
+    if has_term(
+        title_key,
+        GAMING_TERMS
+    ):
         return True, "titolo gaming"
 
-    # Descrizioni generiche non bastano da sole.
-    return False, "nessun segnale gaming sufficiente"
+    return False, "nessun segnale gaming"
 
 
 def get_articles():
     articles = []
     successful_feeds = 0
 
-    for source, url in FEEDS.items():
+    for source, feed_url in FEEDS.items():
         try:
             response = session.get(
-                url, timeout=25
+                feed_url, timeout=25
             )
             response.raise_for_status()
 
@@ -314,7 +269,7 @@ def get_articles():
 
             if not items:
                 raise ValueError(
-                    "Feed senza elementi RSS"
+                    "Feed RSS senza articoli"
                 )
 
             successful_feeds += 1
@@ -330,9 +285,7 @@ def get_articles():
                 title = clean_text(
                     element_text(item, "title")
                 )
-                link = element_text(
-                    item, "link"
-                )
+                link = element_text(item, "link")
                 description = clean_text(
                     element_text(item, "description")
                 )
@@ -344,29 +297,21 @@ def get_articles():
                     continue
 
                 allowed, reason = is_gaming_article(
-                    title,
-                    description,
-                    categories,
-                    source
+                    title, description,
+                    categories, source
                 )
 
-                if not allowed:
-                    print(
-                        "SCARTATA:",
-                        reason,
-                        "|", title[:110],
-                        flush=True
-                    )
-                    continue
-
                 print(
-                    "AMMESSA:",
+                    "AMMESSA:" if allowed else "SCARTATA:",
                     reason,
                     "|", title[:110],
                     flush=True
                 )
 
-                normalized = normalize_title(title)
+                if not allowed:
+                    continue
+
+                title_key = normalize_title(title)
                 url_key = normalize_url(link)
 
                 article_id = hashlib.sha256(
@@ -379,7 +324,7 @@ def get_articles():
                     "url": link,
                     "description": description[:300],
                     "source": source,
-                    "title_key": normalized
+                    "title_key": title_key
                 })
 
         except Exception as error:
@@ -392,11 +337,10 @@ def get_articles():
 
     if successful_feeds == 0:
         raise RuntimeError(
-            "Nessuna fonte RSS disponibile. "
+            "Nessun feed disponibile. "
             "Storico non modificato."
         )
 
-    # Rimuove titoli identici fra le fonti.
     unique = []
     titles = set()
 
@@ -422,6 +366,11 @@ def send_discord(article):
             "Secret DISCORD_WEBHOOK_GAMING mancante"
         )
 
+    if not COVER.is_file():
+        raise RuntimeError(
+            "Copertina gaming_cover.png mancante"
+        )
+
     embed = {
         "title": article["title"][:256],
         "url": article["url"],
@@ -435,16 +384,10 @@ def send_discord(article):
         },
         "timestamp": datetime.now(
             timezone.utc
-        ).isoformat()
-    }
-
-    if not COVER.is_file():
-        raise RuntimeError(
-            "Copertina gaming_cover.png mancante"
-        )
-
-    embed["image"] = {
-        "url": "attachment://gaming_cover.png"
+        ).isoformat(),
+        "image": {
+            "url": "attachment://gaming_cover.png"
+        }
     }
 
     with COVER.open("rb") as image:
@@ -519,11 +462,10 @@ def main():
         seen.add(article["id"])
 
         STATE.write_text(
-            json.dumps(
-                sorted(seen), indent=2
-            ),
+            json.dumps(sorted(seen), indent=2),
             encoding="utf-8"
         )
+
         time.sleep(2)
 
     print(
