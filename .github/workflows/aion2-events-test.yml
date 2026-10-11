@@ -1,0 +1,30 @@
+
+name: ARTYKO AION 2 Events - Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-events:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Scarica repository
+        uses: actions/checkout@v4
+
+      - name: Configura Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installa librerie
+        run: python -m pip install requests
+
+      - name: Test calendario AION 2
+        env:
+          AION2_EVENTS_DRY_RUN: "true"
+        run: python -u aion2_events.py
