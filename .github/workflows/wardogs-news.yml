@@ -10,6 +10,9 @@ on:
         type: boolean
         default: false
 
+  schedule:
+    - cron: '17,37,57 * * * *'
+
 permissions:
   contents: write
 
@@ -37,11 +40,11 @@ jobs:
       - name: Controlla notizie WARDOGS
         env:
           DISCORD_WEBHOOK_WARDOGS: ${{ secrets.DISCORD_WEBHOOK_WARDOGS }}
-          WARDOGS_DRY_RUN: ${{ inputs.publish == true && 'false' || 'true' }}
+          WARDOGS_DRY_RUN: ${{ (github.event_name == 'schedule' || inputs.publish == true) && 'false' || 'true' }}
         run: python -u wardogs_news.py
 
       - name: Salva storico notizie
-        if: ${{ inputs.publish == true }}
+        if: ${{ github.event_name == 'schedule' || inputs.publish == true }}
         run: |
           if [ -f wardogs_seen_articles.json ]; then
             git config user.name "github-actions[bot]"
