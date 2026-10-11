@@ -11,209 +11,195 @@ import requests
 from bs4 import BeautifulSoup
 
 # ============================================
-# ARTYKO GAME RELEASES
-# Calendario giornaliero videogiochi
+# ARTYKO GAME RELEASES - V2
+# Calendario curato, con watchlist
 # ============================================
 
 WEBHOOK = os.getenv("DISCORD_WEBHOOK_RELEASES", "")
 DRY_RUN = os.getenv("RELEASES_DRY_RUN", "true").lower() != "false"
 
-TIMEZONE = ZoneInfo("Europe/Rome")
-NOW = datetime.now(TIMEZONE)
+TZ = ZoneInfo("Europe/Rome")
+NOW = datetime.now(TZ)
 TODAY = NOW.date()
 END_DATE = TODAY + timedelta(days=6)
 
-COVER = Path("releases_cover.png")
+WATCHLIST = Path("releases_watchlist.json")
 HISTORY = Path("releases_seen.json")
+COVER = Path("releases_cover.png")
 
-STEAM_URL = (
-    "https://store.steampowered.com/search/"
-    "?filter=popularcomingsoon&supportedlang=english"
-)
-
-MAX_PAGES = 5
-MAX_GAMES = 12
+MAX_PAGES = 10
+MAX_GAMES = 10
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 ARTYKO-Game-Releases/1.0",
+    "User-Agent": "Mozilla/5.0",
     "Accept-Language": "en-US,en;q=0.9",
 }
 
-PRIORITY_WORDS = (
-    "mmorpg", "massively multiplayer", "rpg",
-    "role-playing", "multiplayer", "online",
-    "action", "adventure", "open world",
-    "survival", "shooter", "strategy",
-)
-
-EXCLUDED_WORDS = (
-    "demo", "soundtrack", "artbook",
-    "art book", "wallpaper", "playtest",
-    "dedicated server",
+EXCLUDED = (
+    "demo", "playtest", "soundtrack", "artbook",
+    "art book", "wallpaper", "dedicated server",
+    "beta test", "test server",
 )
 
 
-def parse_date(raw):
-    """Accetta soltanto date complete e non ambigue."""
-    raw = re.sub(r"\s+", " ", raw or "").strip()
-    raw = re.sub(r"(?i)^release date:\s*", "", raw)
+def normalize(text):
+    text = text.casefold()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return " ".join(text.split())
 
-    formats = (
+
+def load_watchlist():
+    if not WATCHLIST.exists():
+        raise RuntimeError("File releases_watchlist.json mancante.")
+
+    data = json.loads(WATCHLIST.read_text(encoding="utf-8"))
+    titles = data.get("priority_games", [])
+
+    if not isinstance(titles, list) or not titles:
+        raise RuntimeError("Watchlist vuota o non valida.")
+
+    return [normalize(x) for x in titles if isinstance(x, str)]
+
+
+def parse_date(value):
+    value = re.sub(r"\s+", " ", value or "").strip()
+    value = re.sub(r"(?i)^release date:\s*", "", value)
+
+    for fmt in (
         "%b %d, %Y",
         "%B %d, %Y",
         "%d %b, %Y",
         "%d %B, %Y",
-    )
-
-    for fmt in formats:
+    ):
         try:
-            return datetime.strptime(raw, fmt).date()
+            return datetime.strptime(value, fmt).date()
         except ValueError:
-            continue
+            pass
 
     return None
 
 
 def load_history():
-    if not HISTORY.exists():
-        return {}
-
     try:
-        data = json.loads(HISTORY.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except (ValueError, OSError):
+        return json.loads(HISTORY.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
         return {}
 
 
-def save_history(history):
+def save_history(data):
     HISTORY.write_text(
-        json.dumps(history, indent=2, ensure_ascii=False),
+        json.dumps(data, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
 
 
-def get_steam_games():
-    """Legge le prossime uscite popolari di Steam."""
+def is_priority(title, watchlist):
+    normalized = normalize(title)
+
+    for entry in watchlist:
+        if normalized == entry:
+            return True
+
+        # Consente sottotitoli ed edizioni dei giochi monitorati.
+        if normalized.startswith(entry + " "):
+            return True
+
+    return False
+
+
+def fetch_games(watchlist):
     session = requests.Session()
     session.headers.update(HEADERS)
 
-    games = {}
+    selected = {}
     successful_pages = 0
 
     for page in range(MAX_PAGES):
-        params = {
-            "query": "",
-            "start": page * 50,
-            "count": 50,
-            "dynamic_data": "",
-            "sort_by": "_ASC",
-            "filter": "popularcomingsoon",
-            "supportedlang": "english",
-            "infinite": "1",
-        }
-
         try:
             response = session.get(
                 "https://store.steampowered.com/search/results/",
-                params=params,
+                params={
+                    "start": page * 50,
+                    "count": 50,
+                    "filter": "popularcomingsoon",
+                    "supportedlang": "english",
+                    "infinite": "1",
+                },
                 timeout=25,
             )
             response.raise_for_status()
 
-            payload = response.json()
-            html = payload.get("results_html", "")
-            soup = BeautifulSoup(html, "html.parser")
-            rows = soup.select("a.search_result_row")
+            html = response.json().get("results_html", "")
+            rows = BeautifulSoup(
+                html, "html.parser"
+            ).select("a.search_result_row")
 
             successful_pages += 1
-            print(f"Steam pagina {page + 1}: {len(rows)} risultati")
+            print(f"Steam pagina {page + 1}: {len(rows)} giochi")
 
             if not rows:
                 break
 
             for row in rows:
                 appid = row.get("data-ds-appid", "").split(",")[0]
-                title_el = row.select_one(".title")
-                date_el = row.select_one(".search_released")
+                title_element = row.select_one(".title")
+                date_element = row.select_one(".search_released")
 
-                if not appid.isdigit() or not title_el or not date_el:
+                if not appid.isdigit() or not title_element or not date_element:
                     continue
 
-                title = title_el.get_text(" ", strip=True)
-                release = parse_date(date_el.get_text(" ", strip=True))
+                title = title_element.get_text(" ", strip=True)
 
-                if not release or not TODAY <= release <= END_DATE:
+                if any(word in normalize(title) for word in EXCLUDED):
                     continue
 
-                if any(word in title.lower() for word in EXCLUDED_WORDS):
+                if not is_priority(title, watchlist):
                     continue
 
-                url = f"https://store.steampowered.com/app/{appid}/"
+                release = parse_date(
+                    date_element.get_text(" ", strip=True)
+                )
 
-                games[appid] = {
-                    "id": appid,
+                if release is None or not TODAY <= release <= END_DATE:
+                    continue
+
+                selected[appid] = {
                     "title": title,
                     "date": release,
-                    "url": url,
-                    "platform": "PC (Steam)",
+                    "url": f"https://store.steampowered.com/app/{appid}/",
                 }
 
-            time.sleep(0.5)
+            time.sleep(0.3)
 
         except (requests.RequestException, ValueError) as exc:
-            print(f"Errore Steam pagina {page + 1}: {exc}")
-            continue
+            print(f"Errore pagina {page + 1}: {exc}")
 
     if successful_pages == 0:
-        raise RuntimeError("Steam non ha restituito pagine utilizzabili.")
+        raise RuntimeError("Impossibile leggere il catalogo Steam.")
 
-    return list(games.values())
-
-
-def priority_score(game):
-    """Priorità indicativa, non classificazione AAA certificata."""
-    title = game["title"].lower()
-
-    score = 0
-
-    for word in PRIORITY_WORDS:
-        if word in title:
-            score += 2
-
-    return score
-
-
-def build_message(games):
-    ordered = sorted(
-        games,
-        key=lambda game: (
-            game["date"],
-            -priority_score(game),
-            game["title"].lower(),
-        ),
+    return sorted(
+        selected.values(),
+        key=lambda x: (x["date"], x["title"].casefold()),
     )[:MAX_GAMES]
 
-    lines = []
 
-    for game in ordered:
+def build_payload(games):
+    entries = []
+
+    for game in games:
         date_text = game["date"].strftime("%d/%m/%Y")
-        lines.append(
+        entries.append(
             f"🎮 **[{game['title']}]({game['url']})**\n"
-            f"📅 {date_text} · 💻 {game['platform']}"
+            f"📅 {date_text} · 💻 PC (Steam)"
         )
-
-    description = "\n\n".join(lines)
-
-    if len(description) > 3900:
-        description = description[:3850] + "\n\n…"
 
     return {
         "username": "ARTYKO GAME RELEASES",
         "allowed_mentions": {"parse": []},
         "embeds": [
             {
-                "title": "🎮 ARTYKO | USCITE VIDEOGIOCHI",
-                "description": description,
+                "title": "🎮 ARTYKO | PROSSIME USCITE",
+                "description": "\n\n".join(entries),
                 "color": 0x00E5C3,
                 "fields": [
                     {
@@ -226,10 +212,7 @@ def build_message(games):
                     }
                 ],
                 "footer": {
-                    "text": (
-                        "Fonte: Steam · Date soggette a modifiche "
-                        "· Copertura PC parziale"
-                    )
+                    "text": "Fonte: Steam · Calendario PC selezionato"
                 },
                 "timestamp": NOW.isoformat(),
             }
@@ -243,7 +226,7 @@ def publish(payload):
 
     url = WEBHOOK + ("&" if "?" in WEBHOOK else "?") + "wait=true"
 
-    if COVER.is_file():
+    if COVER.exists():
         payload["embeds"][0]["image"] = {
             "url": "attachment://releases_cover.png"
         }
@@ -262,39 +245,41 @@ def publish(payload):
                 timeout=30,
             )
     else:
-        print("Copertina assente: invio senza immagine.")
         response = requests.post(url, json=payload, timeout=30)
 
     response.raise_for_status()
-    print("Messaggio pubblicato su Discord.")
+    print("Calendario pubblicato su Discord.")
 
 
 def main():
-    print("======================================")
-    print("ARTYKO GAME RELEASES")
-    print("======================================")
+    print("====================================")
+    print("ARTYKO GAME RELEASES V2")
+    print("====================================")
     print(f"Ora italiana: {NOW.isoformat()}")
-    print(f"Periodo: {TODAY} -> {END_DATE}")
-    print(f"Modalità simulazione: {DRY_RUN}")
+    print(f"Periodo: {TODAY} - {END_DATE}")
+    print(f"Simulazione: {DRY_RUN}")
+
+    watchlist = load_watchlist()
+    print(f"Titoli prioritari: {len(watchlist)}")
 
     history = load_history()
-    today_key = TODAY.isoformat()
 
-    if history.get("last_published") == today_key:
+    if history.get("last_published") == TODAY.isoformat():
         print("Calendario già pubblicato oggi.")
         return
 
-    games = get_steam_games()
-    print(f"Giochi con data valida nei prossimi 7 giorni: {len(games)}")
+    games = fetch_games(watchlist)
+
+    print(f"Uscite prioritarie trovate: {len(games)}")
 
     if not games:
-        print("Nessuna uscita verificata nel campione Steam.")
+        print("Nessuna uscita prioritaria nei prossimi 7 giorni.")
         print("Nessun messaggio inviato.")
         return
 
-    payload = build_message(games)
+    payload = build_payload(games)
 
-    print("\nANTEPRIMA CALENDARIO:")
+    print("\nANTEPRIMA:")
     print(payload["embeds"][0]["description"])
 
     if DRY_RUN:
@@ -303,8 +288,7 @@ def main():
         return
 
     publish(payload)
-
-    history["last_published"] = today_key
+    history["last_published"] = TODAY.isoformat()
     save_history(history)
     print("Storico aggiornato.")
 
