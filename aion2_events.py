@@ -28,7 +28,7 @@ DRY_RUN = (
 )
 
 STATE_FILE = "aion2_events_state.json"
-CALENDAR_LIMIT = 12
+CALENDAR_LIMIT = 7
 
 EVENTS = [
     {
