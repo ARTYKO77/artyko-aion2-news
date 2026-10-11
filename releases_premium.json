@@ -1,0 +1,63 @@
+
+{
+  "major_franchises": [
+    "Grand Theft Auto",
+    "GTA",
+    "Resident Evil",
+    "Battlefield",
+    "Call of Duty",
+    "Assassin's Creed",
+    "Final Fantasy",
+    "The Witcher",
+    "The Elder Scrolls",
+    "Monster Hunter",
+    "Silent Hill",
+    "DOOM",
+    "Gears of War",
+    "Halo",
+    "Forza",
+    "Fable",
+    "Mass Effect",
+    "Dragon Quest",
+    "Kingdom Hearts",
+    "Metal Gear",
+    "Tomb Raider",
+    "Star Wars",
+    "Warhammer 40,000",
+    "Diablo",
+    "Borderlands",
+    "Cyberpunk",
+    "Pokémon",
+    "Zelda",
+    "Mario"
+  ],
+  "major_mmos": [
+    "Aion",
+    "World of Warcraft",
+    "Final Fantasy XIV",
+    "Guild Wars",
+    "The Elder Scrolls Online",
+    "Black Desert",
+    "Throne and Liberty",
+    "Ashes of Creation",
+    "Chrono Odyssey",
+    "ArcheAge",
+    "Dune: Awakening"
+  ],
+  "approved_games": [
+    "Crimson Desert",
+    "Phantom Blade Zero",
+    "007 First Light",
+    "Marvel's Wolverine",
+    "Escape from Tarkov",
+    "Warframe",
+    "WARDOGS"
+  ],
+  "exclude_editions": [
+    "Deluxe Edition",
+    "Gold Edition",
+    "Ultimate Edition",
+    "Complete Edition",
+    "Definitive Edition"
+  ]
+}
