@@ -25,14 +25,49 @@ jobs:
     steps:
       - name: Scarica repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - name: Configura Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Installa librerie
         run: pip install requests beautifulsoup4
+
+      - name: Verifica permessi di scrittura
+        if: ${{ inputs.publish == true }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import os
+          import requests
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GH_TOKEN"]
+          url = f"https://api.github.com/repos/{repo}"
+
+          response = requests.get(
+              url,
+              headers={
+                  "Authorization": f"Bearer {token}",
+                  "Accept": "application/vnd.github+json",
+              },
+              timeout=20,
+          )
+          response.raise_for_status()
+
+          permissions = response.json().get("permissions", {})
+          if not permissions.get("push", False):
+              raise RuntimeError(
+                  "Permessi di scrittura non confermati. "
+                  "Pubblicazione bloccata."
+              )
+
+          print("Controllo permessi completato.")
+          PY
 
       - name: Controlla calendario uscite
         env:
@@ -43,15 +78,29 @@ jobs:
       - name: Salva storico pubblicazioni
         if: ${{ inputs.publish == true }}
         run: |
-          if [ -f releases_seen.json ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add releases_seen.json
+          if [ ! -f releases_seen.json ]; then
+            echo "Storico mancante."
+            exit 1
+          fi
 
-            if ! git diff --cached --quiet; then
-              git commit -m "Update game releases history"
-              git push
-            else
-              echo "Nessun aggiornamento allo storico."
-            fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add releases_seen.json
+
+          if git diff --cached --quiet; then
+            echo "Nessun aggiornamento allo storico."
+            exit 0
+          fi
+
+          git commit -m "Update game releases history"
+
+          if git push; then
+            echo "Storico salvato correttamente."
+          else
+            echo "Push iniziale non riuscito."
+            echo "Tentativo di recupero..."
+            git pull --rebase origin main
+            git push origin HEAD:main
+            echo "Storico salvato dopo recupero."
           fi
