@@ -1,5 +1,5 @@
 
-name: ARTYKO Sea of Thieves - Test accesso
+name: ARTYKO Sea of Thieves - Test Steam
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  test-accesso:
+  test-steam:
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -18,38 +18,74 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Verifica accesso alle notizie italiane
+      - name: Verifica notizie Sea of Thieves da Steam
         shell: bash
         run: |
           python - <<'PY'
+          import json
           import urllib.request
           import urllib.error
 
-          urls = [
-              "https://www.seaofthieves.com/it/news",
-              "https://www.seaofthieves.com/it/news/this-month-october2026",
-          ]
+          url = (
+              "https://api.steampowered.com/"
+              "ISteamNews/GetNewsForApp/v2/"
+              "?appid=1172620&count=10&maxlength=300"
+          )
 
-          for url in urls:
-              print(f"\nControllo: {url}", flush=True)
+          print("ARTYKO - TEST STEAM SEA OF THIEVES")
+          print("Controllo API ufficiale Steam...", flush=True)
 
-              request = urllib.request.Request(
-                  url,
-                  headers={
-                      "User-Agent": "Mozilla/5.0",
-                      "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
-                  },
+          request = urllib.request.Request(
+              url,
+              headers={
+                  "User-Agent": "ARTYKO-NewsBot/1.0",
+                  "Accept": "application/json",
+              },
+          )
+
+          try:
+              with urllib.request.urlopen(
+                  request, timeout=25
+              ) as response:
+                  data = json.load(response)
+                  print(f"HTTP: {response.status}")
+
+              news = data.get("appnews", {}).get(
+                  "newsitems", []
               )
 
-              try:
-                  with urllib.request.urlopen(request, timeout=20) as response:
-                      content = response.read()
-                      print(f"HTTP: {response.status}")
-                      print(f"Dimensione pagina: {len(content)} byte")
-                      print(f"URL finale: {response.url}")
-              except urllib.error.HTTPError as error:
-                  print(f"HTTP: {error.code}")
-                  print(f"Errore: {error.reason}")
-              except Exception as error:
-                  print(f"Errore: {type(error).__name__}: {error}")
+              print(f"Notizie ricevute: {len(news)}")
+
+              for index, article in enumerate(
+                  news, start=1
+              ):
+                  print(f"\nNOTIZIA {index}")
+                  print(
+                      "Titolo:",
+                      article.get("title", "N/D")
+                  )
+                  print(
+                      "Fonte:",
+                      article.get("feedname", "N/D")
+                  )
+                  print(
+                      "Link:",
+                      article.get("url", "N/D")
+                  )
+
+              if not news:
+                  raise RuntimeError(
+                      "Steam risponde, ma non ci sono notizie."
+                  )
+
+              print(
+                  "\nSUCCESSO: Steam accessibile da GitHub!"
+              )
+
+          except Exception as error:
+              print(
+                  f"\nTEST FALLITO: "
+                  f"{type(error).__name__}: {error}"
+              )
+              raise
           PY
