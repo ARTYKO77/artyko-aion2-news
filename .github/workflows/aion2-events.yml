@@ -1,0 +1,69 @@
+
+name: ARTYKO AION 2 Events
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Pubblicare realmente su Discord?"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: artyko-aion2-events
+  cancel-in-progress: false
+
+jobs:
+  events:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Scarica repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configura Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installa librerie
+        run: python -m pip install requests
+
+      - name: Esegui calendario AION 2
+        env:
+          DISCORD_WEBHOOK_AION2_EVENTS: ${{ secrets.DISCORD_WEBHOOK_AION2_EVENTS }}
+          AION2_EVENTS_DRY_RUN: ${{ (github.event_name == 'schedule' || inputs.publish == true) && 'false' || 'true' }}
+        run: python -u aion2_events.py
+
+      - name: Salva storico eventi
+        if: ${{ success() && (github.event_name == 'schedule' || inputs.publish == true) }}
+        run: |
+          if [ ! -f aion2_events_state.json ]; then
+            echo "Nessuno storico da salvare."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add aion2_events_state.json
+
+          if git diff --cached --quiet; then
+            echo "Nessuna modifica allo storico."
+            exit 0
+          fi
+
+          git commit -m "Update AION 2 events state [skip ci]"
+          git pull --rebase origin main
+          git push origin HEAD:main
