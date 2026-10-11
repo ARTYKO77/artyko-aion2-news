@@ -1,4 +1,11 @@
 
 {
-  "verified_releases": []
+  "verified_releases": [
+    {
+      "title": "Warhammer 40,000: Boltgun 2",
+      "date": "2026-10-14",
+      "platforms": "PC (Steam)",
+      "official_url": "https://store.steampowered.com/app/3115160/"
+    }
+  ]
 }
