@@ -1,0 +1,55 @@
+
+name: ARTYKO Sea of Thieves - Test accesso
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-accesso:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Configura Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verifica accesso alle notizie italiane
+        shell: bash
+        run: |
+          python - <<'PY'
+          import urllib.request
+          import urllib.error
+
+          urls = [
+              "https://www.seaofthieves.com/it/news",
+              "https://www.seaofthieves.com/it/news/this-month-october2026",
+          ]
+
+          for url in urls:
+              print(f"\nControllo: {url}", flush=True)
+
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      "User-Agent": "Mozilla/5.0",
+                      "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+                  },
+              )
+
+              try:
+                  with urllib.request.urlopen(request, timeout=20) as response:
+                      content = response.read()
+                      print(f"HTTP: {response.status}")
+                      print(f"Dimensione pagina: {len(content)} byte")
+                      print(f"URL finale: {response.url}")
+              except urllib.error.HTTPError as error:
+                  print(f"HTTP: {error.code}")
+                  print(f"Errore: {error.reason}")
+              except Exception as error:
+                  print(f"Errore: {type(error).__name__}: {error}")
+          PY
