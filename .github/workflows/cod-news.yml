@@ -32,7 +32,7 @@ jobs:
           python-version: '3.11'
 
       - name: Installa librerie
-        run: pip install requests beautifulsoup4
+        run: pip install requests beautifulsoup4 pillow
 
       - name: Esegui ARTYKO COD NEWS
         env:
