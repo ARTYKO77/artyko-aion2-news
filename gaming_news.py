@@ -15,9 +15,9 @@ from xml.etree import ElementTree as ET
 import requests
 
 # ==========================================
-# ARTYKO GAMING NEWS V7
+# ARTYKO GAMING NEWS V8
 # MODALITA' EQUILIBRATA
-# MAX 2 NOTIZIE AL GIORNO
+# MAX 3 NOTIZIE AL GIORNO
 # ==========================================
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -30,7 +30,7 @@ DRY_RUN = os.getenv(
 ).lower() != "false"
 
 ITALY_TZ = ZoneInfo("Europe/Rome")
-DAILY_LIMIT = 2
+DAILY_LIMIT = 3
 
 FEEDS = {
     "Multiplayer.it": "https://multiplayer.it/feed/rss/news/",
@@ -38,11 +38,11 @@ FEEDS = {
 
 MAX_PER_FEED = 40
 FIRST_RUN_LIMIT = 3
-MAX_PER_RUN = 2
+MAX_PER_RUN = 3
 
 session = requests.Session()
 session.headers.update({
-    "User-Agent": "ARTYKO-Gaming-News/7.0"
+    "User-Agent": "ARTYKO-Gaming-News/8.0"
 })
 
 EXCLUDED_TYPES = (
@@ -203,7 +203,9 @@ GAMING_TERMS = (
     "overwatch", "destiny",
     "arc raiders", "marathon",
     "fable", "starfield",
-    "hollow knight",
+    "hollow knight", "phantom blade zero",
+    "forza horizon", "tekken", "naruto",
+    "gran turismo", "starfield",
     "metal gear", "death stranding",
     "hell is us", "the talos principle",
 )
@@ -280,60 +282,41 @@ def get_categories(item):
 
 
 def is_gaming_article(title, description, categories, source):
+    """Filtro V8: distingue il tema gaming dalla presenza di parole-news."""
     title_key = normalize(title)
     description_key = normalize(description)
-    category_keys = [
-        normalize(category)
-        for category in categories
-    ]
+    category_keys = [normalize(category) for category in categories]
 
     if has_term(title_key, EXCLUDED_TYPES):
         return False, "tipologia esclusa"
-
     if has_term(title_key, CINEMA_TV):
         return False, "cinema/TV"
-
     if has_term(title_key, COMMERCIAL):
         return False, "vendite/record/merchandising"
-
-    if any(
-        has_term(category, CINEMA_CATEGORIES)
-        for category in category_keys
-    ):
+    if any(has_term(category, CINEMA_CATEGORIES) for category in category_keys):
         return False, "categoria cinema/TV"
 
-    if not has_term(title_key, NEWS_TERMS):
-        return False, "non e una novita gaming"
-
-    has_gaming_category = any(
-        has_term(category, GAMING_CATEGORIES)
-        for category in category_keys
+    gaming_in_title = has_term(title_key, GAMING_TERMS)
+    gaming_in_description = has_term(description_key, GAMING_TERMS)
+    gaming_in_category = any(
+        has_term(category, GAMING_CATEGORIES) for category in category_keys
     )
+    news_in_title = has_term(title_key, NEWS_TERMS)
+    news_in_description = has_term(description_key, NEWS_TERMS)
 
-    has_gaming_title = has_term(
-        title_key, GAMING_TERMS
-    )
+    # Le notizie che nominano un videogioco/piattaforma nel titolo
+    # non devono essere scartate solo perche' manca 'annunciato'.
+    if gaming_in_title:
+        return True, "gioco o piattaforma nel titolo"
 
-    if not (
-        source == "Multiplayer.it"
-        or has_gaming_category
-        or has_gaming_title
+    # Per titoli generici, chiediamo sia contesto gaming sia
+    # un'indicazione concreta di novita', anche nella descrizione.
+    if (gaming_in_category or gaming_in_description) and (
+        news_in_title or news_in_description
     ):
-        return False, "nessun riferimento gaming"
+        return True, "novita gaming dal contesto"
 
-    if (
-        not has_gaming_title
-        and has_term(description_key, CINEMA_TV)
-    ):
-        return False, "descrizione cinema/TV"
-
-    if source == "Multiplayer.it":
-        return True, "novita Multiplayer.it"
-
-    if has_gaming_category:
-        return True, "novita categoria gaming"
-
-    return True, "novita titolo gaming"
+    return False, "tema gaming o novita non sufficientemente chiari"
 
 
 def load_state():
@@ -559,7 +542,7 @@ def main():
     )
 
     print("=" * 42)
-    print("ARTYKO GAMING NEWS V7")
+    print("ARTYKO GAMING NEWS V8")
     print("=" * 42)
     print("Data italiana:", today)
     print("Pubblicate oggi:", published_today)
@@ -622,6 +605,9 @@ def main():
         return
 
     for article in selected:
+        if int(daily_counts.get(today_italy(), 0)) >= DAILY_LIMIT:
+            print("Limite giornaliero raggiunto durante il run.")
+            break
         send_discord(article)
 
         seen.add(article["id"])
