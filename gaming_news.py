@@ -15,7 +15,7 @@ from xml.etree import ElementTree as ET
 import requests
 
 # ==========================================
-# ARTYKO GAMING NEWS V6
+# ARTYKO GAMING NEWS V7
 # MODALITA' EQUILIBRATA
 # MAX 2 NOTIZIE AL GIORNO
 # ==========================================
@@ -33,8 +33,7 @@ ITALY_TZ = ZoneInfo("Europe/Rome")
 DAILY_LIMIT = 2
 
 FEEDS = {
-    "IGN Italia": "https://it.ign.com/feed.xml",
-    "GameSpot": "https://www.gamespot.com/feeds/game-news/",
+    "Multiplayer.it": "https://multiplayer.it/feed/rss/news/",
 }
 
 MAX_PER_FEED = 40
@@ -43,7 +42,7 @@ MAX_PER_RUN = 2
 
 session = requests.Session()
 session.headers.update({
-    "User-Agent": "ARTYKO-Gaming-News/6.0"
+    "User-Agent": "ARTYKO-Gaming-News/7.0"
 })
 
 EXCLUDED_TYPES = (
@@ -316,7 +315,7 @@ def is_gaming_article(title, description, categories, source):
     )
 
     if not (
-        source == "GameSpot"
+        source == "Multiplayer.it"
         or has_gaming_category
         or has_gaming_title
     ):
@@ -328,8 +327,8 @@ def is_gaming_article(title, description, categories, source):
     ):
         return False, "descrizione cinema/TV"
 
-    if source == "GameSpot":
-        return True, "novita GameSpot"
+    if source == "Multiplayer.it":
+        return True, "novita Multiplayer.it"
 
     if has_gaming_category:
         return True, "novita categoria gaming"
@@ -560,7 +559,7 @@ def main():
     )
 
     print("=" * 42)
-    print("ARTYKO GAMING NEWS V6")
+    print("ARTYKO GAMING NEWS V7")
     print("=" * 42)
     print("Data italiana:", today)
     print("Pubblicate oggi:", published_today)
