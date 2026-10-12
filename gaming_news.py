@@ -15,7 +15,7 @@ from xml.etree import ElementTree as ET
 import requests
 
 # ==========================================
-# ARTYKO GAMING NEWS V8
+# ARTYKO GAMING NEWS V9
 # MODALITA' EQUILIBRATA
 # MAX 3 NOTIZIE AL GIORNO
 # ==========================================
@@ -42,7 +42,7 @@ MAX_PER_RUN = 3
 
 session = requests.Session()
 session.headers.update({
-    "User-Agent": "ARTYKO-Gaming-News/8.0"
+    "User-Agent": "ARTYKO-Gaming-News/9.0"
 })
 
 EXCLUDED_TYPES = (
@@ -53,6 +53,9 @@ EXCLUDED_TYPES = (
     "sconto", "sconti", "coupon",
     "best deals", "deal",
     "preorder", "pre order",
+    "preordine", "pre-ordine", "prenotabile", "prenotazione",
+    "bundle", "amazon", "instant gaming", "in sconto",
+    "in promozione", "offerta lampo", "codice sconto",
     "preordini", "preordini aperti",
     "quanto costa", "costa solo",
     "prezzo", "price",
@@ -218,6 +221,51 @@ GAMING_CATEGORIES = (
     "pc gaming", "esports",
     "mmorpg",
 )
+
+
+# Segnali di notizie concrete. Il titolo pesa piu' della descrizione.
+HIGH_PRIORITY = (
+    "data di uscita", "date di uscita", "release date",
+    "annuncia", "annunciato", "annunciata", "svelato",
+    "presentato", "nuovo gioco", "nuova ip",
+    "trailer", "gameplay", "aggiornamento", "patch",
+    "nuova espansione", "espansione", "dlc",
+    "nuova mappa", "nuovo personaggio", "nuova classe",
+    "beta", "playtest", "demo", "roadmap",
+    "uscira", "arriva a novembre", "arriva a ottobre",
+)
+
+MEDIUM_PRIORITY = (
+    "confermato", "confermata", "disponibile",
+    "in sviluppo", "nuova modalita", "crossplay",
+    "accesso anticipato", "early access",
+    "remaster", "remastered", "upgrade",
+)
+
+# Anche senza offerte esplicite, queste notizie non sono prioritarie.
+LOW_PRIORITY = (
+    "edizione fisica", "versione fisica",
+    "custodia", "confezione", "prezzo",
+    "rumor", "indiscrezione", "secondo un insider",
+    "mod", "fan made", "creata dai fan",
+)
+
+
+def news_priority(title, description):
+    """Punteggio editoriale; nessuna IA o API aggiuntiva."""
+    title_key = normalize(title)
+    description_key = normalize(description)
+    score = 0
+
+    if has_term(title_key, HIGH_PRIORITY):
+        score += 6
+    if has_term(title_key, MEDIUM_PRIORITY):
+        score += 3
+    if has_term(description_key, HIGH_PRIORITY):
+        score += 2
+    if has_term(title_key, LOW_PRIORITY):
+        score -= 5
+    return score
 
 
 def clean_text(value):
@@ -438,7 +486,8 @@ def get_articles():
                     "url": link,
                     "description": description[:300],
                     "source": source,
-                    "title_key": title_key
+                    "title_key": title_key,
+                    "priority": news_priority(title, description)
                 })
 
         except Exception as error:
@@ -471,6 +520,8 @@ def get_articles():
         flush=True
     )
 
+    # Ordine per rilevanza; a parita' rimane l'ordine RSS originale.
+    unique.sort(key=lambda article: article["priority"], reverse=True)
     return unique
 
 
@@ -542,7 +593,7 @@ def main():
     )
 
     print("=" * 42)
-    print("ARTYKO GAMING NEWS V8")
+    print("ARTYKO GAMING NEWS V9")
     print("=" * 42)
     print("Data italiana:", today)
     print("Pubblicate oggi:", published_today)
@@ -592,6 +643,7 @@ def main():
         print(
             "NOTIZIA:",
             article["source"],
+            "| priorita:", article["priority"],
             "|", article["title"],
             "|", article["url"],
             flush=True
