@@ -1,8 +1,13 @@
-
 name: ARTYKO AION 2 News
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Pubblicare le notizie su Discord?'
+        required: true
+        type: boolean
+        default: false
 
   schedule:
     - cron: '7 */2 * * *'
@@ -34,10 +39,18 @@ jobs:
 
       - name: Controlla le notizie AION 2
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: python aion2_news.py
+          DISCORD_WEBHOOK_URL: ${{ (github.event_name == 'schedule' || inputs.publish == true) && secrets.DISCORD_WEBHOOK_URL || '' }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.publish }}" != "true" ]; then
+            echo "SIMULAZIONE: nessuna notizia inviata su Discord e nessuno storico modificato."
+            python -m py_compile aion2_news.py
+            echo "Codice Python: sintassi valida."
+          else
+            python aion2_news.py
+          fi
 
       - name: Salva lo storico delle notizie
+        if: github.event_name == 'schedule' || inputs.publish == true
         run: |
           if [ -f seen_articles.json ]; then
             git config user.name "github-actions[bot]"
