@@ -1,0 +1,63 @@
+
+name: ARTYKO Warframe News
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Pubblicare le nuove notizie su Discord?"
+        required: true
+        type: boolean
+        default: false
+
+  schedule:
+    - cron: '17 */2 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: artyko-warframe-news
+  cancel-in-progress: false
+
+jobs:
+  warframe-news:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Scarica repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Configura Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Installa librerie
+        run: pip install requests beautifulsoup4
+
+      - name: Controlla notizie Warframe
+        env:
+          DISCORD_WEBHOOK_WARFRAME: ${{ secrets.DISCORD_WEBHOOK_WARFRAME }}
+          WARFRAME_DRY_RUN: ${{ (github.event_name == 'schedule' || inputs.publish == true) && 'false' || 'true' }}
+        run: python -u warframe_news.py
+
+      - name: Salva storico notizie
+        if: ${{ github.event_name == 'schedule' || inputs.publish == true }}
+        run: |
+          if [ -f warframe_seen_articles.json ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+            git add warframe_seen_articles.json
+
+            if ! git diff --cached --quiet; then
+              git commit -m "Update Warframe news history"
+              git push
+            else
+              echo "Nessuna nuova notizia da salvare."
+            fi
+          fi
