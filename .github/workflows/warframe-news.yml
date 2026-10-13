@@ -10,6 +10,12 @@ on:
         type: boolean
         default: false
 
+      test_cover:
+        description: "Inviare un solo messaggio di prova con la copertina?"
+        required: true
+        type: boolean
+        default: false
+
 permissions:
   contents: write
 
@@ -39,11 +45,12 @@ jobs:
       - name: Controlla notizie Warframe
         env:
           DISCORD_WEBHOOK_WARFRAME: ${{ secrets.DISCORD_WEBHOOK_WARFRAME }}
-          WARFRAME_DRY_RUN: ${{ (github.event_name == 'schedule' || inputs.publish == true) && 'false' || 'true' }}
+          WARFRAME_DRY_RUN: ${{ (inputs.publish == true || inputs.test_cover == true) && 'false' || 'true' }}
+          WARFRAME_TEST_COVER: ${{ inputs.test_cover == true && 'true' || 'false' }}
         run: python -u warframe_news.py
 
       - name: Salva storico notizie
-        if: ${{ github.event_name == 'schedule' || inputs.publish == true }}
+        if: ${{ inputs.publish == true && inputs.test_cover != true }}
         run: |
           if [ -f warframe_seen_articles.json ]; then
             git config user.name "github-actions[bot]"
