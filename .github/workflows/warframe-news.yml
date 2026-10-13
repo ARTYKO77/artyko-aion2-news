@@ -16,6 +16,12 @@ on:
         type: boolean
         default: false
 
+      test_official:
+        description: "Inviare una sola notizia dal sito ufficiale Warframe?"
+        required: true
+        type: boolean
+        default: false
+
 permissions:
   contents: write
 
@@ -45,12 +51,13 @@ jobs:
       - name: Controlla notizie Warframe
         env:
           DISCORD_WEBHOOK_WARFRAME: ${{ secrets.DISCORD_WEBHOOK_WARFRAME }}
-          WARFRAME_DRY_RUN: ${{ (inputs.publish == true || inputs.test_cover == true) && 'false' || 'true' }}
+          WARFRAME_DRY_RUN: ${{ (inputs.publish == true || inputs.test_cover == true || inputs.test_official == true) && 'false' || 'true' }}
           WARFRAME_TEST_COVER: ${{ inputs.test_cover == true && 'true' || 'false' }}
+          WARFRAME_TEST_OFFICIAL: ${{ inputs.test_official == true && 'true' || 'false' }}
         run: python -u warframe_news.py
 
       - name: Salva storico notizie
-        if: ${{ inputs.publish == true && inputs.test_cover != true }}
+        if: ${{ inputs.publish == true && inputs.test_cover != true && inputs.test_official != true }}
         run: |
           if [ -f warframe_seen_articles.json ]; then
             git config user.name "github-actions[bot]"
