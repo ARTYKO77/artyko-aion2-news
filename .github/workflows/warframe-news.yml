@@ -22,6 +22,12 @@ on:
         type: boolean
         default: false
 
+      initialize_history:
+        description: "Inizializzare lo storico senza pubblicare notizie?"
+        required: true
+        type: boolean
+        default: false
+
   schedule:
     - cron: '37 */2 * * *'
 
@@ -54,13 +60,14 @@ jobs:
       - name: Controlla notizie Warframe
         env:
           DISCORD_WEBHOOK_WARFRAME: ${{ secrets.DISCORD_WEBHOOK_WARFRAME }}
-          WARFRAME_DRY_RUN: ${{ (github.event_name == 'schedule' || inputs.publish == true || inputs.test_cover == true || inputs.test_official == true) && 'false' || 'true' }}
+          WARFRAME_DRY_RUN: ${{ (github.event_name == 'schedule' || inputs.publish == true || inputs.test_cover == true || inputs.test_official == true || inputs.initialize_history == true) && 'false' || 'true' }}
           WARFRAME_TEST_COVER: ${{ github.event_name == 'workflow_dispatch' && inputs.test_cover == true && 'true' || 'false' }}
           WARFRAME_TEST_OFFICIAL: ${{ github.event_name == 'workflow_dispatch' && inputs.test_official == true && 'true' || 'false' }}
+          WARFRAME_INIT_HISTORY: ${{ github.event_name == 'workflow_dispatch' && inputs.initialize_history == true && 'true' || 'false' }}
         run: python -u warframe_news.py
 
       - name: Salva storico notizie
-        if: ${{ github.event_name == 'schedule' || (inputs.publish == true && inputs.test_cover != true && inputs.test_official != true) }}
+        if: ${{ github.event_name == 'schedule' || (inputs.initialize_history == true) || (inputs.publish == true && inputs.test_cover != true && inputs.test_official != true && inputs.initialize_history != true) }}
         run: |
           if [ -f warframe_seen_articles.json ]; then
             git config user.name "github-actions[bot]"
@@ -72,6 +79,8 @@ jobs:
               git commit -m "Update Warframe news history"
               git push
             else
-              echo "Nessuna nuova notizia da salvare."
+              echo "Nessuna modifica allo storico."
             fi
+          else
+            echo "Storico non presente: nessun commit da eseguire."
           fi
