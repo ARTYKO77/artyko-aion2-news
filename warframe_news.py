@@ -17,19 +17,11 @@ from urllib.parse import urljoin, urlparse
 # ============================================================
 # ARTYKO | WARFRAME NEWS
 #
-# Fonti:
-# - Steam News
-# - Warframe.com
-#
-# Funzioni:
-# - Controllo notizie
-# - Protezione duplicati
-# - Copertine ufficiali
-# - Copertina ARTYKO alternativa
-# - Simulazione sicura
-# - Storico pubblicazioni
+# Fonti: Steam + Warframe.com
+# Copertine ufficiali + fallback ARTYKO
+# Storico e protezione duplicati
+# Test copertina indipendente dalle notizie
 # ============================================================
-
 
 APP_ID = 230410
 
@@ -51,8 +43,12 @@ WEBHOOK = os.getenv(
 
 DRY_RUN = (
     os.getenv("WARFRAME_DRY_RUN", "true")
-    .strip()
-    .lower() != "false"
+    .strip().lower() != "false"
+)
+
+TEST_COVER = (
+    os.getenv("WARFRAME_TEST_COVER", "false")
+    .strip().lower() == "true"
 )
 
 MAX_NEWS = 100
@@ -60,50 +56,33 @@ FIRST_RUN_LIMIT = 3
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 
 session = requests.Session()
-
 session.headers.update({
     "User-Agent": "ARTYKO-Warframe-News/1.0"
 })
 
 
 # ============================================================
-# PULIZIA TESTI E IDENTIFICAZIONE NOTIZIE
+# TESTI E IDENTIFICAZIONE ARTICOLI
 # ============================================================
 
 def clean_text(value):
     value = re.sub(
-        r"\[/?[^\]]+\]",
-        " ",
-        str(value)
+        r"\[/?[^\]]+\]", " ", str(value)
     )
-
-    value = re.sub(
-        r"<[^>]+>",
-        " ",
-        value
-    )
-
-    return " ".join(
-        html.unescape(value).split()
-    )
+    value = re.sub(r"<[^>]+>", " ", value)
+    return " ".join(html.unescape(value).split())
 
 
 def title_key(title):
-    title = unicodedata.normalize(
-        "NFKD",
-        title
-    )
+    title = unicodedata.normalize("NFKD", title)
 
     title = "".join(
-        char
-        for char in title
+        char for char in title
         if not unicodedata.combining(char)
     )
 
     return re.sub(
-        r"[^a-z0-9]",
-        "",
-        title.lower()
+        r"[^a-z0-9]", "", title.lower()
     )
 
 
@@ -114,7 +93,7 @@ def article_id(title):
 
 
 # ============================================================
-# RECUPERO NOTIZIE STEAM
+# NOTIZIE STEAM
 # ============================================================
 
 def get_steam():
@@ -128,7 +107,6 @@ def get_steam():
         },
         timeout=25
     )
-
     response.raise_for_status()
 
     items = response.json().get(
@@ -141,16 +119,10 @@ def get_steam():
         if item.get("feed_type") != 1:
             continue
 
-        title = clean_text(
-            item.get("title", "")
-        )
-
-        if not title:
-            continue
-
+        title = clean_text(item.get("title", ""))
         url = item.get("url", "")
 
-        if not url.startswith("https://"):
+        if not title or not url.startswith("https://"):
             continue
 
         articles.append({
@@ -160,16 +132,12 @@ def get_steam():
             "description": clean_text(
                 item.get("contents", "")
             )[:350],
-            "date": int(
-                item.get("date", 0)
-            ),
+            "date": int(item.get("date", 0)),
             "source": "Steam"
         })
 
     print(
-        "Steam:",
-        len(articles),
-        "annunci",
+        "Steam:", len(articles), "annunci",
         flush=True
     )
 
@@ -177,28 +145,27 @@ def get_steam():
 
 
 # ============================================================
-# RECUPERO NOTIZIE WARFRAME.COM
+# NOTIZIE UFFICIALI WARFRAME.COM
 # ============================================================
 
 def get_official():
     response = session.get(
-        OFFICIAL_URL,
-        timeout=25
+        OFFICIAL_URL, timeout=25
     )
-
     response.raise_for_status()
 
     soup = BeautifulSoup(
-        response.text,
-        "html.parser"
+        response.text, "html.parser"
     )
 
     articles = []
     known_urls = set()
 
     for link in soup.select("a[href]"):
-        href = link.get("href", "")
-        url = urljoin(OFFICIAL_URL, href)
+        url = urljoin(
+            OFFICIAL_URL,
+            link.get("href", "")
+        )
         parsed = urlparse(url)
 
         if parsed.netloc not in (
@@ -220,10 +187,7 @@ def get_official():
             link.get_text(" ", strip=True)
         )
 
-        if not title:
-            continue
-
-        if title.lower() == "read more":
+        if not title or title.lower() == "read more":
             continue
 
         container = link.parent
@@ -235,10 +199,7 @@ def get_official():
                 break
 
             context = clean_text(
-                container.get_text(
-                    " ",
-                    strip=True
-                )
+                container.get_text(" ", strip=True)
             )
 
             date_match = re.search(
@@ -257,15 +218,10 @@ def get_official():
         if not date_match:
             continue
 
-        date_string = (
-            date_match.group(1)
-            + " "
-            + date_match.group(2)
-        )
-
         timestamp = int(
             datetime.strptime(
-                date_string,
+                date_match.group(1) + " "
+                + date_match.group(2),
                 "%Y-%m-%d %H:%M:%S"
             ).replace(
                 tzinfo=timezone.utc
@@ -273,9 +229,7 @@ def get_official():
         )
 
         description = context.replace(
-            title,
-            "",
-            1
+            title, "", 1
         )
 
         description = re.sub(
@@ -288,8 +242,7 @@ def get_official():
         )
 
         description = description.replace(
-            "Read More",
-            ""
+            "Read More", ""
         ).strip()
 
         articles.append({
@@ -305,8 +258,7 @@ def get_official():
 
     print(
         "Warframe.com:",
-        len(articles),
-        "articoli",
+        len(articles), "articoli",
         flush=True
     )
 
@@ -314,7 +266,7 @@ def get_official():
 
 
 # ============================================================
-# UNIONE FONTI E CONTROLLO DUPLICATI
+# UNIONE FONTI E DUPLICATI
 # ============================================================
 
 def get_articles():
@@ -332,7 +284,7 @@ def get_articles():
                 print(
                     "ATTENZIONE:",
                     name,
-                    "non ha restituito articoli.",
+                    "nessun articolo.",
                     flush=True
                 )
                 continue
@@ -343,8 +295,7 @@ def get_articles():
         except Exception as error:
             print(
                 "ERRORE fonte:",
-                name,
-                str(error),
+                name, error,
                 flush=True
             )
 
@@ -353,12 +304,10 @@ def get_articles():
             "Nessuna fonte ha restituito notizie."
         )
 
-    # Gli articoli del sito ufficiale
-    # hanno priorita' sui duplicati Steam.
-
+    # Priorita' alla fonte ufficiale
     articles.sort(
-        key=lambda article: (
-            article["source"] == "Warframe.com"
+        key=lambda a: (
+            a["source"] == "Warframe.com"
         )
     )
 
@@ -369,12 +318,11 @@ def get_articles():
 
     result = sorted(
         unique.values(),
-        key=lambda article: article["date"]
+        key=lambda a: a["date"]
     )
 
     print(
-        "Articoli unici:",
-        len(result),
+        "Articoli unici:", len(result),
         flush=True
     )
 
@@ -382,16 +330,12 @@ def get_articles():
 
 
 # ============================================================
-# RECUPERO COPERTINA UFFICIALE
+# COPERTINA UFFICIALE
 # ============================================================
 
 def find_official_image(article):
     url = article["url"]
-
     parsed = urlparse(url)
-
-    # Per sicurezza cerchiamo immagini soltanto
-    # nelle pagine ufficiali di Warframe.
 
     if parsed.hostname not in (
         "www.warframe.com",
@@ -401,20 +345,16 @@ def find_official_image(article):
 
     try:
         response = session.get(
-            url,
-            timeout=20
+            url, timeout=20
         )
-
         response.raise_for_status()
 
         soup = BeautifulSoup(
-            response.text,
-            "html.parser"
+            response.text, "html.parser"
         )
 
         meta = soup.find(
-            "meta",
-            property="og:image"
+            "meta", property="og:image"
         )
 
         if not meta:
@@ -423,12 +363,11 @@ def find_official_image(article):
                 attrs={"name": "twitter:image"}
             )
 
-        if not meta:
+        if not meta or not meta.get("content"):
             return None
 
         image_url = urljoin(
-            url,
-            meta.get("content", "")
+            url, meta["content"]
         )
 
         if image_url.startswith("https://"):
@@ -436,7 +375,7 @@ def find_official_image(article):
 
     except requests.RequestException as error:
         print(
-            "Copertina ufficiale non disponibile:",
+            "Immagine ufficiale non disponibile:",
             error,
             flush=True
         )
@@ -458,12 +397,10 @@ def get_cover(article):
                 timeout=25,
                 stream=True
             )
-
             response.raise_for_status()
 
             content_type = response.headers.get(
-                "Content-Type",
-                ""
+                "Content-Type", ""
             ).split(";")[0].lower()
 
             extensions = {
@@ -479,9 +416,7 @@ def get_cover(article):
 
             image_data = bytearray()
 
-            for chunk in response.iter_content(
-                65536
-            ):
+            for chunk in response.iter_content(65536):
                 image_data.extend(chunk)
 
                 if len(image_data) > MAX_IMAGE_BYTES:
@@ -490,14 +425,7 @@ def get_cover(article):
                     )
 
             if not image_data:
-                raise ValueError(
-                    "Immagine vuota."
-                )
-
-            filename = (
-                "warframe_official."
-                + extensions[content_type]
-            )
+                raise ValueError("Immagine vuota.")
 
             print(
                 "Copertina ufficiale trovata.",
@@ -505,7 +433,8 @@ def get_cover(article):
             )
 
             return (
-                filename,
+                "warframe_official."
+                + extensions[content_type],
                 bytes(image_data),
                 content_type
             )
@@ -522,8 +451,7 @@ def get_cover(article):
 
     if not COVER.is_file():
         raise FileNotFoundError(
-            "Copertina ARTYKO mancante: "
-            "warframe_cover.png"
+            "Copertina mancante: warframe_cover.png"
         )
 
     print(
@@ -539,53 +467,31 @@ def get_cover(article):
 
 
 # ============================================================
-# PUBBLICAZIONE SU DISCORD
+# INVIO MESSAGGI DISCORD
 # ============================================================
 
-def send_discord(article):
+def post_embed(embed, cover):
     if not WEBHOOK:
         raise RuntimeError(
             "Webhook Discord Warframe mancante."
         )
 
-    filename, image_data, content_type = get_cover(
-        article
-    )
+    filename, image_data, content_type = cover
 
-    embed = {
-        "title": article["title"][:256],
-        "description": article["description"][:350],
-        "url": article["url"],
-        "color": 0x00D9D0,
-        "image": {
-            "url": "attachment://" + filename
-        },
-        "footer": {
-            "text": (
-                "ARTYKO NEWS NETWORK | WARFRAME"
-                " | " + article["source"]
-            )
-        },
-        "timestamp": datetime.fromtimestamp(
-            article["date"],
-            tz=timezone.utc
-        ).isoformat()
+    embed["image"] = {
+        "url": "attachment://" + filename
     }
 
     payload = {
         "username": "ARTYKO WARFRAME NEWS",
-        "allowed_mentions": {
-            "parse": []
-        },
+        "allowed_mentions": {"parse": []},
         "embeds": [embed]
     }
 
     response = session.post(
         WEBHOOK,
         data={
-            "payload_json": json.dumps(
-                payload
-            )
+            "payload_json": json.dumps(payload)
         },
         files={
             "files[0]": (
@@ -600,6 +506,34 @@ def send_discord(article):
     response.raise_for_status()
 
     print(
+        "Messaggio Discord inviato.",
+        flush=True
+    )
+
+
+def send_discord(article):
+    cover = get_cover(article)
+
+    embed = {
+        "title": article["title"][:256],
+        "description": article["description"][:350],
+        "url": article["url"],
+        "color": 0x00D9D0,
+        "footer": {
+            "text": (
+                "ARTYKO NEWS NETWORK | WARFRAME"
+                " | " + article["source"]
+            )
+        },
+        "timestamp": datetime.fromtimestamp(
+            article["date"],
+            tz=timezone.utc
+        ).isoformat()
+    }
+
+    post_embed(embed, cover)
+
+    print(
         "Notizia pubblicata:",
         article["title"],
         flush=True
@@ -607,7 +541,67 @@ def send_discord(article):
 
 
 # ============================================================
-# STORICO NOTIZIE
+# TEST COPERTINA SENZA MODIFICARE LO STORICO
+# ============================================================
+
+def send_cover_test():
+    print(
+        "MODALITA' TEST COPERTINA ATTIVA",
+        flush=True
+    )
+
+    print(
+        "Nessuna notizia reale verra' pubblicata.",
+        flush=True
+    )
+
+    print(
+        "Lo storico non verra' modificato.",
+        flush=True
+    )
+
+    if not COVER.is_file():
+        raise FileNotFoundError(
+            "Copertina warframe_cover.png mancante."
+        )
+
+    if DRY_RUN:
+        print(
+            "SIMULAZIONE: nessun messaggio inviato.",
+            flush=True
+        )
+        return
+
+    embed = {
+        "title": "TEST COPERTINA | ARTYKO WARFRAME NEWS",
+        "description": (
+            "⚡ Verifica della copertina personalizzata "
+            "ARTYKO per le notizie di Warframe.\n\n"
+            "Questo messaggio e' soltanto un test "
+            "e puo' essere eliminato."
+        ),
+        "color": 0x00D9D0,
+        "footer": {
+            "text": "ARTYKO NEWS NETWORK | TEST"
+        }
+    }
+
+    cover = (
+        "warframe_cover.png",
+        COVER.read_bytes(),
+        "image/png"
+    )
+
+    post_embed(embed, cover)
+
+    print(
+        "TEST COPERTINA COMPLETATO!",
+        flush=True
+    )
+
+
+# ============================================================
+# STORICO
 # ============================================================
 
 def load_seen():
@@ -615,9 +609,7 @@ def load_seen():
         return set()
 
     data = json.loads(
-        STATE.read_text(
-            encoding="utf-8"
-        )
+        STATE.read_text(encoding="utf-8")
     )
 
     if not isinstance(data, list):
@@ -639,7 +631,7 @@ def save_seen(seen):
 
 
 # ============================================================
-# ESECUZIONE PRINCIPALE
+# PROGRAMMA PRINCIPALE
 # ============================================================
 
 def main():
@@ -647,23 +639,17 @@ def main():
     print("ARTYKO | WARFRAME NEWS")
     print("=" * 48)
 
-    print(
-        "Modalita' simulazione:",
-        DRY_RUN,
-        flush=True
-    )
+    print("Simulazione:", DRY_RUN, flush=True)
+    print("Test copertina:", TEST_COVER, flush=True)
+    print("Webhook configurato:", bool(WEBHOOK), flush=True)
+    print("Copertina presente:", COVER.is_file(), flush=True)
 
-    print(
-        "Webhook configurato:",
-        bool(WEBHOOK),
-        flush=True
-    )
+    # Il test copertina ha precedenza assoluta:
+    # non legge notizie e non modifica lo storico.
 
-    print(
-        "Copertina ARTYKO presente:",
-        COVER.is_file(),
-        flush=True
-    )
+    if TEST_COVER:
+        send_cover_test()
+        return
 
     articles = get_articles()
 
@@ -676,9 +662,7 @@ def main():
     seen = load_seen()
 
     if first_run:
-        selected = articles[
-            -FIRST_RUN_LIMIT:
-        ]
+        selected = articles[-FIRST_RUN_LIMIT:]
     else:
         selected = [
             article
@@ -720,9 +704,8 @@ def main():
         )
         return
 
-    # Al primo avvio registriamo anche
-    # le notizie precedenti per evitare
-    # di pubblicarle nei controlli futuri.
+    # Segna come viste le notizie recuperate
+    # per evitare pubblicazioni arretrate.
 
     seen.update(
         article["id"]
